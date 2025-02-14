@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Notion-Formula-Auto-Conversion-Tool
 // @namespace    http://tampermonkey.net/
-// @version      1.61
+// @version      1.5
 // @description  自动公式转换工具(支持持久化)
 // @author       YourName
 // @match        https://www.notion.so/*
@@ -47,24 +47,13 @@
             opacity: 0.9;
             transform: scale(0.98);
             border-radius: 50%;
-            transform-origin: bottom right;
         }
 
         #formula-helper.collapsed .content-wrapper {
             opacity: 0;
             transform: scale(0.8);
             pointer-events: none;
-            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) 0.05s;
-            transform-origin: bottom right;
-        }
-
-        #formula-helper.collapsed #convert-btn,
-        #formula-helper.collapsed #progress-container,
-        #formula-helper.collapsed #status-text {
-            opacity: 0;
-            transform: scale(0.8);
-            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-            transform-origin: bottom right;
+            transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
         }
 
         #formula-helper #convert-btn,
@@ -114,7 +103,6 @@
             position: static;
             width: 100%;
             height: 100%;
-            transform-origin: center;
         }
 
         #formula-helper.collapsed #collapse-btn svg {
@@ -252,12 +240,13 @@
     let panel, statusText, convertBtn, progressBar, progressContainer, collapseBtn;
     let isProcessing = false;
     let formulaCount = 0;
-    let isCollapsed = false;
+    let isCollapsed = true;
     let hoverTimer = null;
 
     function createPanel() {
         panel = document.createElement('div');
         panel.id = 'formula-helper';
+        panel.classList.add('collapsed');
         panel.innerHTML = `
             <button id="collapse-btn">
                 <svg viewBox="0 0 24 24">
@@ -265,7 +254,7 @@
                 </svg>
             </button>
             <div class="content-wrapper">
-                <button id="convert-btn">🔄</button>
+                <button id="convert-btn">🔄 (0)</button>
                 <div id="progress-container">
                     <div id="progress-bar"></div>
                 </div>
@@ -328,97 +317,20 @@
     // 公式查找
     function findFormulas(text) {
         const formulas = [];
+        const combinedRegex = /\$\$(.*?)\$\$|\$([^\$\n]+?)\$|\\\((.*?)\\\)/gs;
 
-        // 使用原始文本，保留换行符以匹配块级公式
-        const normalizedText = text;
+        let match;
+        while ((match = combinedRegex.exec(text)) !== null) {
+            const [fullMatch, blockFormula, inlineFormula, latexFormula] = match;
+            const formula = fullMatch;
 
-        // 打印原始文本内容，帮助调试
-        console.log('原始文本:', text);
-        console.log('文本长度:', text.length);
-        console.log('换行符情况:', text.match(/\r|\n|\r\n/g));
-
-        // 修改正则表达式
-        const blockRegex = /\$\$[\r\n]?([\s\S]+?)[\r\n]?\$\$/g;  // 更宽松的块级公式匹配
-        const inlineRegex = /(?<!\$)\$([^\$]+?)\$(?!\$)/g;  // 行内公式，移除\n限制
-        const latexRegex = /\\\(([\s\S]*?)\\\)/g;  // 匹配LaTeX公式
-
-        // 查找所有公式
-        function findMatches(regex) {
-            let match;
-            const matches = [];
-            let content = normalizedText;
-
-            while ((match = regex.exec(content)) !== null) {
-                console.log('找到匹配:', match);
-                console.log('完整匹配内容:', match[0]);
-                console.log('捕获组内容:', match[1]);
-                console.log('匹配位置:', match.index);
-                console.log('周围上下文:', content.substring(Math.max(0, match.index - 20), match.index + match[0].length + 20));
-
-                let formula = match[0];
-                let index = match.index;
-                let length = formula.length;
-
-                // 对于块级公式
-                if (regex === blockRegex && match[1]) {
-                    formula = match[1].trim();  // 移除可能的前后空白
-                    index = match.index + match[0].indexOf(match[1]);  // 精确定位公式内容
-                    length = match[1].length;
-
-                    console.log('处理后的公式:', {
-                        formula,
-                        index,
-                        length,
-                        surroundingContext: content.substring(Math.max(0, index - 10), index + length + 10)
-                    });
-                } else {
-                    // 验证其他类型公式的结构完整性
-                    if (formula.length > 4 && // 确保公式有实际内容
-                        ((formula.startsWith('$') && formula.endsWith('$') && !formula.includes('$$')) ||
-                         (formula.startsWith('\\(') && formula.endsWith('\\)')))) {
-                        matches.push({
-                            formula: formula,
-                            index: index,
-                            length: length
-                        });
-                    }
-                    continue;
-                }
-
-                matches.push({
-                    formula: formula,
-                    index: index,
-                    length: length
+            if (formula) {
+                formulas.push({
+                    formula: fullMatch,
+                    index: match.index
                 });
             }
-            return matches;
         }
-
-        // 优先查找块级公式
-        const blockFormulas = findMatches(blockRegex);
-        formulas.push(...blockFormulas);
-
-        // 查找其他类型的公式，确保不与已找到的公式重叠
-        function addNonOverlappingFormulas(newFormulas) {
-            for (const formula of newFormulas) {
-                const overlaps = formulas.some(existing => {
-                    const existingEnd = existing.index + existing.length;
-                    const newEnd = formula.index + formula.length;
-                    return !(formula.index >= existingEnd || newEnd <= existing.index);
-                });
-                if (!overlaps) {
-                    formulas.push(formula);
-                }
-            }
-        }
-
-        addNonOverlappingFormulas(findMatches(inlineRegex));
-        addNonOverlappingFormulas(findMatches(latexRegex));
-
-        // 按位置排序
-        formulas.sort((a, b) => a.index - b.index);
-
-        console.log('找到的公式:', formulas.map(f => f.formula));
 
         return formulas;
     }
@@ -468,133 +380,28 @@
     }
 
     // 优化的公式转换
-    async function convertFormula(editor, formula, retryCount = 0) {
-        const MAX_RETRIES = 3; // 最大重试次数
+    async function convertFormula(editor, formula) {
         try {
-            // 获取文本内容
-            const fullText = editor.textContent;
-
-            // 获取所有文本节点和位置信息
-            const textNodes = [];
             const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
-            let accumulatedLength = 0;
+            const textNodes = [];
             let node;
 
             while (node = walker.nextNode()) {
-                const nodeLength = node.textContent.length;
-                textNodes.push({
-                    node,
-                    start: accumulatedLength,
-                    end: accumulatedLength + nodeLength
-                });
-                accumulatedLength += nodeLength;
-            }
-
-            // 检查是否已是转换后的公式
-            if (fullText.includes('⁡')) {
-                return true;
-            }
-
-            let formulaIndex;
-            let formulaEnd;
-            let isBlockFormula = false;
-            let firstLine, lastLine;
-
-            // 查找块级公式
-            const blockRegex = /\$\$\n([\s\S]*?)\n\$\$/g;
-            let blockMatch;
-            let foundMatch = false;
-
-            while ((blockMatch = blockRegex.exec(fullText)) !== null) {
-                // 提取公式内容（去掉首尾的$$）
-                const allLines = blockMatch[0].split('\n');
-                if (allLines.length >= 3) {
-                    const matchFormula = allLines.slice(1, -1).join('\n');
-                    if (matchFormula === formula) {
-                        foundMatch = true;
-                        break;
-                    }
+                if (node.textContent.includes(formula)) {
+                    textNodes.unshift(node);
                 }
             }
 
-            // 检查是否是块级公式并且内容匹配
-            if (blockMatch && foundMatch) {
-                isBlockFormula = true;
-                // 准确定位第二行
-                const firstLineEnd = fullText.indexOf('\n', blockMatch.index) + 1;
-                formulaIndex = firstLineEnd;
-                formulaEnd = fullText.indexOf('\n', firstLineEnd);
-
-                // 记录第一行和第三行的$$位置，供后续删除使用
-                firstLine = blockMatch.index;
-                lastLine = blockMatch.index + blockMatch[0].length - 2;
-
-                // 删除第一行和第三行的$$
-                setTimeout(async () => {
-                    const selection = window.getSelection();
-                    selection.removeAllRanges();
-
-                    // 删除第三行的$$
-                    const range3 = document.createRange();
-                    const node3 = findNodeAtIndex(editor, lastLine, textNodes);
-                    if (node3) {
-                        range3.setStart(node3.node, lastLine - node3.start);
-                        range3.setEnd(node3.node, lastLine + 2 - node3.start);
-                        range3.deleteContents();
-                    }
-
-                    // 删除第一行的$$
-                    const range1 = document.createRange();
-                    const node1 = findNodeAtIndex(editor, firstLine, textNodes);
-                    if (node1) {
-                        range1.setStart(node1.node, firstLine - node1.start);
-                        range1.setEnd(node1.node, firstLine + 2 - node1.start);
-                        range1.deleteContents();
-                    }
-                }, 500);
-            } else {
-                // 非块级公式，查找普通位置
-                formulaIndex = fullText.indexOf(formula);
-                if (formulaIndex === -1) {
-                    console.warn('未找到匹配的文本');
-                    return;
-                }
-                formulaEnd = formulaIndex + formula.length;
-            }
-
-
-            // 找到公式跨越的所有节点
-            const relevantNodes = textNodes.filter(nodeInfo => {
-                return !(nodeInfo.end <= formulaIndex || nodeInfo.start >= formulaEnd);
-            });
-
-            if (relevantNodes.length === 0) {
-                console.warn('未找到包含公式的文本节点');
+            if (!textNodes.length) {
+                console.warn('未找到匹配的文本');
                 return;
             }
 
-            const targetNode = relevantNodes[0].node;
-            const startOffset = formulaIndex - relevantNodes[0].start;
-
-            // 设置选区
+            const targetNode = textNodes[0];
+            const startOffset = targetNode.textContent.indexOf(formula);
             const range = document.createRange();
-            try {
-                // 限制选区仅包含公式内容
-                range.setStart(targetNode, startOffset);
-                const endOffset = startOffset + formula.length;
-                range.setEnd(targetNode, Math.min(endOffset, targetNode.length));
-            } catch(e) {
-                console.warn('Range设置失败:', e);
-                return false;
-            }
-
-            // 添加调试信息
-            console.log('选区信息:', {
-                formula,
-                nodeCount: relevantNodes.length,
-                startOffset,
-                text: range.toString()
-            });
+            range.setStart(targetNode, startOffset);
+            range.setEnd(targetNode, startOffset + formula.length);
 
             const selection = window.getSelection();
             selection.removeAllRanges();
@@ -611,17 +418,10 @@
                 hasSvg: true,
                 buttonText: ['equation', '公式', 'math']
             });
-            if (!formulaButton) {
-                if (retryCount < MAX_RETRIES) {
-                    console.log(`未找到公式按钮，正在重试(${retryCount + 1}/${MAX_RETRIES})...`);
-                    await sleep(500 * (retryCount + 1)); // 每次重试增加等待时间
-                    return await convertFormula(editor, formula, retryCount + 1);
-                }
-                throw new Error(`未找到公式按钮(已重试${MAX_RETRIES}次)`);
-            }
+            if (!formulaButton) throw new Error('未找到公式按钮');
 
             await simulateClick(formulaButton);
-            await sleep(100); // 增加等待时间
+            await sleep(50);
 
             const doneButton = await findButton(document, {
                 buttonText: ['done', '完成'],
@@ -683,8 +483,8 @@
                 }
             }
 
-            updateStatus(`Completed!`, 3000);
-            convertBtn.textContent = `🔄`; // (${formulaCount})
+            updateStatus(`Done:${formulaCount}`, 3000);
+            convertBtn.textContent = `🔄 (${formulaCount})`;
 
         } catch (error) {
             console.error('转换过程出错:', error);
@@ -700,16 +500,6 @@
                 }
             }, 1000);
         }
-    }
-
-    // 查找指定位置的文本节点
-    function findNodeAtIndex(editor, index, textNodes) {
-        for (const nodeInfo of textNodes) {
-            if (index >= nodeInfo.start && index < nodeInfo.end) {
-                return nodeInfo;
-            }
-        }
-        return null;
     }
 
     // 点击事件模拟
@@ -740,7 +530,7 @@
     setTimeout(() => {
         const formulas = findFormulas(document.body.textContent);
         if (formulas.length > 0) {
-            convertBtn.textContent = `🔄`; // (${formulas.length})
+            convertBtn.textContent = `🔄(${formulas.length})`;
         }
     }, 1000);
 
