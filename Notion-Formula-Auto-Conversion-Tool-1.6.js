@@ -1,12 +1,14 @@
 // ==UserScript==
 // @name         Notion-Formula-Auto-Conversion-Tool
 // @namespace    http://tampermonkey.net/
-// @version      1.5
+// @version      1.6
 // @description  自动公式转换工具(支持持久化)
 // @author       YourName
 // @match        https://www.notion.so/*
 // @grant        GM_addStyle
 // @require      https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js
+// @downloadURL https://update.greasyfork.org/scripts/525730/Notion-Formula-Auto-Conversion-Tool.user.js
+// @updateURL https://update.greasyfork.org/scripts/525730/Notion-Formula-Auto-Conversion-Tool.meta.js
 // ==/UserScript==
 
 (function() {
@@ -485,6 +487,14 @@
 
             updateStatus(`Done:${formulaCount}`, 3000);
             convertBtn.textContent = `🔄 (${formulaCount})`;
+
+            // 转换完成后自动收起面板
+            setTimeout(() => {
+                if (!panel.classList.contains('collapsed')) {
+                    panel.classList.add('collapsed');
+                    isCollapsed = true;
+                }
+            }, 1000);
 
         } catch (error) {
             console.error('转换过程出错:', error);
