@@ -413,26 +413,20 @@
             document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
             await sleep(50);
 
-            const area = await findOperationArea();
-            if (!area) throw new Error('未找到操作区域');
-
-            const formulaButton = await findButton(area, {
-                hasSvg: true,
-                buttonText: ['equation', '公式', 'math']
-            });
-            if (!formulaButton) throw new Error('未找到公式按钮');
-
-            await simulateClick(formulaButton);
+            // 使用 Ctrl+Shift+E 快捷键打开公式编辑器
+            await simulateShortcut('Ctrl+Shift+E');
+            // 等待公式编辑器出现，然后模拟 Enter 键确认
             await sleep(50);
 
-            const doneButton = await findButton(document, {
-                buttonText: ['done', '完成'],
-                attempts: 10
+            // 模拟 Enter 键确认公式转换
+            const enterEvent = new KeyboardEvent('keydown', {
+                key: 'Enter',
+                code: 'Enter',
+                keyCode: 13,
+                bubbles: true
             });
-            if (!doneButton) throw new Error('未找到完成按钮');
-
-            await simulateClick(doneButton);
-            await sleep(10);
+            document.dispatchEvent(enterEvent);
+            await sleep(50);
 
             return true;
         } catch (error) {
@@ -530,6 +524,61 @@
             element.dispatchEvent(event);
             await sleep(20);
         }
+    }
+
+    // 键盘快捷键模拟
+    async function simulateShortcut(keyCombination) {
+        const keys = keyCombination.split('+');
+        const keyEvents = [];
+
+        // 创建键盘事件
+        for (const key of keys) {
+            const isModifier = ['ctrl', 'shift', 'alt', 'meta'].includes(key.toLowerCase());
+            const keyCode = getKeyCode(key);
+
+            keyEvents.push({
+                key: keyCode.key,
+                code: keyCode.code,
+                keyCode: keyCode.keyCode,
+                ctrlKey: keys.includes('Ctrl'),
+                shiftKey: keys.includes('Shift'),
+                altKey: keys.includes('Alt'),
+                metaKey: keys.includes('Meta'),
+                bubbles: true
+            });
+        }
+
+        // 先按下所有修饰键
+        for (let i = 0; i < keyEvents.length - 1; i++) {
+            const event = keyEvents[i];
+            document.dispatchEvent(new KeyboardEvent('keydown', event));
+        }
+
+        // 按下最终按键
+        const finalEvent = keyEvents[keyEvents.length - 1];
+        document.dispatchEvent(new KeyboardEvent('keydown', finalEvent));
+        document.dispatchEvent(new KeyboardEvent('keyup', finalEvent));
+
+        // 释放所有修饰键
+        for (let i = keyEvents.length - 2; i >= 0; i--) {
+            const event = keyEvents[i];
+            document.dispatchEvent(new KeyboardEvent('keyup', event));
+        }
+
+        await sleep(100);
+    }
+
+    // 获取键盘按键信息
+    function getKeyCode(key) {
+        const keyMap = {
+            'ctrl': { key: 'Control', code: 'ControlLeft', keyCode: 17 },
+            'shift': { key: 'Shift', code: 'ShiftLeft', keyCode: 16 },
+            'alt': { key: 'Alt', code: 'AltLeft', keyCode: 18 },
+            'meta': { key: 'Meta', code: 'MetaLeft', keyCode: 91 },
+            'e': { key: 'e', code: 'KeyE', keyCode: 69 }
+        };
+
+        return keyMap[key.toLowerCase()] || { key: key, code: `Key${key.toUpperCase()}`, keyCode: key.charCodeAt(0) };
     }
 
     // 初始化
