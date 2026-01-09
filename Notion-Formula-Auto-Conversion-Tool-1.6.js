@@ -413,8 +413,9 @@
             document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
             await sleep(50);
 
-            // 使用 Ctrl+Shift+E 快捷键打开公式编辑器
-            await simulateShortcut('Ctrl+Shift+E');
+            // 使用快捷键打开公式编辑器（Mac 用 Cmd，Windows/Linux 用 Ctrl）
+            const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+            await simulateShortcut(isMac ? 'Meta+Shift+E' : 'Ctrl+Shift+E');
             // 等待公式编辑器出现，然后模拟 Enter 键确认
             await sleep(50);
 
