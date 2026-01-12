@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Notion-Formula-Auto-Conversion-Tool
 // @namespace    http://tampermonkey.net/
-// @version      1.6
-// @description  自动公式转换工具(支持持久化)
+// @version      1.7
+// @description  自动公式转换工具
 // @author       YourName
 // @match        https://www.notion.so/*
 // @grant        GM_addStyle
@@ -319,17 +319,21 @@
     // 公式查找
     function findFormulas(text) {
         const formulas = [];
-        const combinedRegex = /\$\$(.*?)\$\$|\$([^\$\n]+?)\$|\\\((.*?)\\\)/gs;
+        const combinedRegex = /\$\$(.*?)\$\$|\$([^\$\n]+?)\$|\\\((.*?)\\\)|\\\[(.*?)\\\]/gs;
 
         let match;
         while ((match = combinedRegex.exec(text)) !== null) {
-            const [fullMatch, blockFormula, inlineFormula, latexFormula] = match;
+            const [fullMatch, blockFormula, inlineFormula, latexFormula, latexBlockFormula] = match;
             const formula = fullMatch;
 
             if (formula) {
+                // 判断公式类型：块公式（行间）或行内公式
+                const isBlockFormula = fullMatch.startsWith('$$') || fullMatch.startsWith('\\[');
                 formulas.push({
                     formula: fullMatch,
-                    index: match.index
+                    index: match.index,
+                    type: isBlockFormula ? 'block' : 'inline',
+                    content: blockFormula || inlineFormula || latexFormula || latexBlockFormula
                 });
             }
         }
@@ -381,9 +385,67 @@
         return null;
     }
 
+    // 文本输入模拟
+    async function simulateTyping(text) {
+        const activeElement = document.activeElement;
+        if (activeElement) {
+            // 使用 input 事件来输入文本
+            for (const char of text) {
+                const inputEvent = new InputEvent('beforeinput', {
+                    bubbles: true,
+                    cancelable: true,
+                    inputType: 'insertText',
+                    data: char
+                });
+                activeElement.dispatchEvent(inputEvent);
+                
+                document.execCommand('insertText', false, char);
+                
+                const inputEventAfter = new InputEvent('input', {
+                    bubbles: true,
+                    cancelable: false,
+                    inputType: 'insertText',
+                    data: char
+                });
+                activeElement.dispatchEvent(inputEventAfter);
+                
+                await sleep(20);
+            }
+        }
+    }
+
+    // 单个按键模拟
+    async function simulateKey(keyName) {
+        const keyInfo = getKeyCode(keyName);
+        const keydownEvent = new KeyboardEvent('keydown', {
+            key: keyInfo.key,
+            code: keyInfo.code,
+            keyCode: keyInfo.keyCode,
+            bubbles: true
+        });
+        const keyupEvent = new KeyboardEvent('keyup', {
+            key: keyInfo.key,
+            code: keyInfo.code,
+            keyCode: keyInfo.keyCode,
+            bubbles: true
+        });
+        
+        document.dispatchEvent(keydownEvent);
+        await sleep(30);
+        document.dispatchEvent(keyupEvent);
+    }
+
+    // 聚焦到目标元素，避免表格单元格或行顺序错位
+    async function ensureFocus(element) {
+        if (!element) return;
+        element.focus();
+        await simulateClick(element);
+    }
+
     // 优化的公式转换
-    async function convertFormula(editor, formula) {
+    async function convertFormula(editor, formulaObj) {
         try {
+            const { formula, type, content } = formulaObj;
             const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
             const textNodes = [];
             let node;
@@ -409,30 +471,161 @@
             selection.removeAllRanges();
             selection.addRange(range);
 
-            targetNode.parentElement.focus();
-            document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
-            await sleep(50);
+            await ensureFocus(targetNode.parentElement);
+            await sleep(60);
 
-            // 使用 Ctrl+Shift+E 快捷键打开公式编辑器
-            await simulateShortcut('Ctrl+Shift+E');
-            // 等待公式编辑器出现，然后模拟 Enter 键确认
-            await sleep(50);
+            if (type === 'block') {
+                // 块公式：删除选中文本，输入 /block equation 命令
+                document.execCommand('delete');
+                await sleep(100);
 
-            // 模拟 Enter 键确认公式转换
-            const enterEvent = new KeyboardEvent('keydown', {
-                key: 'Enter',
-                code: 'Enter',
-                keyCode: 13,
-                bubbles: true
-            });
-            document.dispatchEvent(enterEvent);
-            await sleep(50);
+                // 重新焦点聚焦，确保光标在正确位置
+                await ensureFocus(targetNode.parentElement);
+                await sleep(80);
+                
+                // 输入 /block equation 命令
+                await simulateTyping('/block equation');
+                await sleep(240);
+
+                // 优先按 Enter 选择命令
+                await simulateKey('Enter');
+                await sleep(100);
+                
+                // 清空并输入公式内容（去掉 $$ 符号）
+                await simulateTyping(content);
+                await sleep(100);
+
+                // 按 Enter 完成编辑（而非 Escape），避免行序错乱
+                await simulateKey('Enter');
+                await sleep(150);
+                
+                // 再次焦点回到原编辑区域，稳定行顺序
+                await ensureFocus(targetNode.parentElement);
+                await sleep(80);
+            } else {
+                // 行内公式：使用快捷键
+                const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+                await ensureFocus(targetNode.parentElement);
+                await simulateShortcut(isMac ? 'Meta+Shift+E' : 'Ctrl+Shift+E');
+                await sleep(100);
+                
+                // 清空并输入公式内容（去掉 $ 符号）
+                document.execCommand('selectAll');
+                await sleep(30);
+                await simulateTyping(content);
+                await sleep(50);
+                
+                // 按 Enter 确认
+                await simulateKey('Enter');
+                await sleep(50);
+            }
 
             return true;
         } catch (error) {
             console.error('转换公式时出错:', error);
             updateStatus(`错误: ${error.message}`);
             throw error;
+        }
+    }
+
+    // 检测并修复失败的块公式转换
+    async function retryFailedBlockEquations() {
+        try {
+            updateStatus('扫描未成功转换的公式...');
+            
+            const editors = document.querySelectorAll('[contenteditable="true"]');
+            let retryCount = 0;
+            
+            for (const editor of editors) {
+                const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
+                const textNodes = [];
+                let node;
+                
+                // 收集所有文本节点
+                while (node = walker.nextNode()) {
+                    textNodes.push(node);
+                }
+                
+                // 查找 /block equation
+                for (let i = 0; i < textNodes.length; i++) {
+                    const node = textNodes[i];
+                    if (node.textContent.includes('/block equation')) {
+                        console.log('找到失败的块公式标记');
+                        
+                        // 删除 /block equation 文本
+                        const startOffset = node.textContent.indexOf('/block equation');
+                        const range = document.createRange();
+                        range.setStart(node, startOffset);
+                        range.setEnd(node, startOffset + '/block equation'.length);
+                        
+                        const selection = window.getSelection();
+                        selection.removeAllRanges();
+                        selection.addRange(range);
+                        
+                        await ensureFocus(node.parentElement);
+                        await sleep(50);
+                        document.execCommand('delete');
+                        await sleep(80);
+                        
+                        // 查找该行后面的内容（已无 $$ 格式）
+                        if (i + 1 < textNodes.length) {
+                            const nextNode = textNodes[i + 1];
+                            const content = nextNode.textContent.trim();
+                            
+                            if (content && content.length > 0) {
+                                console.log('重新转换失败的块公式，内容:', content);
+                                
+                                // 选中下一行全部内容
+                                const formulaRange = document.createRange();
+                                formulaRange.selectNodeContents(nextNode);
+                                
+                                selection.removeAllRanges();
+                                selection.addRange(formulaRange);
+                                
+                                await ensureFocus(nextNode.parentElement);
+                                await sleep(60);
+                                
+                                // 删除该行内容
+                                document.execCommand('delete');
+                                await sleep(80);
+                                
+                                // 重新输入 /block equation 命令
+                                await simulateTyping('/block equation');
+                                await sleep(240);
+                                
+                                // 优先按 Enter 选择命令
+                                await simulateKey('Enter');
+                                await sleep(80);
+                                
+                                // 输入公式内容
+                                await simulateTyping(content);
+                                await sleep(80);
+                                
+                                // 按 Escape 完成编辑
+                                await simulateKey('Escape');
+                                await sleep(120);
+                                
+                                retryCount++;
+                                updateStatus(`重新转换失败公式... (${retryCount})`);
+                                await sleep(150);
+                            }
+                        }
+                    }
+                }
+            }
+            
+            if (retryCount > 0) {
+                updateStatus(`完成修复 ${retryCount} 个失败公式`, 3000);
+                console.log('修复完成，失败公式数:', retryCount);
+            } else {
+                updateStatus('未找到失败的公式', 2000);
+            }
+            
+            return retryCount;
+        } catch (error) {
+            console.error('修复失败公式时出错:', error);
+            updateStatus(`修复出错: ${error.message}`, 3000);
+            return 0;
         }
     }
 
@@ -471,14 +664,24 @@
 
             // 从末尾开始处理公式
             for (const { editor, formulas } of allFormulas.reverse()) {
-                for (const { formula } of formulas.reverse()) {
-                    await convertFormula(editor, formula);
+                for (const formulaObj of formulas.reverse()) {
+                    await convertFormula(editor, formulaObj);
                     formulaCount++;
                     updateProgress(formulaCount, totalFormulas);
-                    updateStatus(`正在转换... (${formulaCount}/${totalFormulas})`);
+                    updateStatus(`正在转换... (${formulaCount}/${totalFormulas}) [${formulaObj.type}]`);
+                    // 给Notion更多时间处理块公式
+                    if (formulaObj.type === 'block') {
+                        await sleep(150);
+                    }
                 }
             }
 
+            updateStatus(`初始转换完成，开始核对...`);
+            await sleep(500);
+            
+            // 核对并修复失败的块公式转换
+            await retryFailedBlockEquations();
+            
             updateStatus(`Done:${formulaCount}`, 3000);
             convertBtn.textContent = `🔄 (${formulaCount})`;
 
@@ -575,6 +778,8 @@
             'shift': { key: 'Shift', code: 'ShiftLeft', keyCode: 16 },
             'alt': { key: 'Alt', code: 'AltLeft', keyCode: 18 },
             'meta': { key: 'Meta', code: 'MetaLeft', keyCode: 91 },
+            'enter': { key: 'Enter', code: 'Enter', keyCode: 13 },
+            'escape': { key: 'Escape', code: 'Escape', keyCode: 27 },
             'e': { key: 'e', code: 'KeyE', keyCode: 69 }
         };
 
