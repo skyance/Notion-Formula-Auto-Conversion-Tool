@@ -173,8 +173,8 @@
         }
 
         #convert-btn.processing {
-            background: #9ca3af;
-            pointer-events: none;
+            background: #ef4444;
+            cursor: pointer;
             transform: scale(0.98);
             box-shadow: none;
         }
@@ -241,6 +241,7 @@
     // 缓存DOM元素
     let panel, statusText, convertBtn, progressBar, progressContainer, collapseBtn;
     let isProcessing = false;
+    let shouldStop = false;
     let formulaCount = 0;
     let isCollapsed = true;
     let hoverTimer = null;
@@ -573,6 +574,7 @@
             let retryCount = 0;
             
             for (const editor of editors) {
+                if (shouldStop) break;
                 const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
                 const textNodes = [];
                 let node;
@@ -584,6 +586,7 @@
                 
                 // 查找 /block equation
                 for (let i = 0; i < textNodes.length; i++) {
+                    if (shouldStop) break;
                     const node = textNodes[i];
                     if (node.textContent.includes('/block equation')) {
                         console.log('找到失败的块公式标记');
@@ -669,11 +672,13 @@
     async function convertFormulas() {
         if (isProcessing) return;
         isProcessing = true;
+        shouldStop = false;
         convertBtn.classList.add('processing');
+        convertBtn.textContent = '取消';
 
         try {
             formulaCount = 0;
-            updateStatus('开始扫描文档...');
+            updateStatus('开始扫描文档... (按ESC取消)');
 
             const editors = document.querySelectorAll('[contenteditable="true"]');
             console.log('找到编辑区域数量:', editors.length);
@@ -700,7 +705,9 @@
 
             // 从末尾开始处理公式
             for (const { editor, formulas } of allFormulas.reverse()) {
+                if (shouldStop) break;
                 for (const formulaObj of formulas.reverse()) {
+                    if (shouldStop) break;
                     await convertFormula(editor, formulaObj);
                     formulaCount++;
                     updateProgress(formulaCount, totalFormulas);
@@ -712,13 +719,18 @@
                 }
             }
 
-            updateStatus(`初始转换完成，开始核对...`);
-            await sleep(500);
+            if (shouldStop) {
+                updateStatus(`已取消。已完成: ${formulaCount}`, 3000);
+            } else {
+                updateStatus(`初始转换完成，开始核对...`);
+                await sleep(500);
+                
+                // 核对并修复失败的块公式转换
+                await retryFailedBlockEquations();
+                
+                updateStatus(`Done:${formulaCount}`, 3000);
+            }
             
-            // 核对并修复失败的块公式转换
-            await retryFailedBlockEquations();
-            
-            updateStatus(`Done:${formulaCount}`, 3000);
             convertBtn.textContent = `🔄 (${formulaCount})`;
 
             // 转换完成后自动收起面板
@@ -824,7 +836,22 @@
 
     // 初始化
     createPanel();
-    convertBtn.addEventListener('click', convertFormulas);
+    convertBtn.addEventListener('click', () => {
+        if (isProcessing) {
+            shouldStop = true;
+            updateStatus('正在取消...');
+        } else {
+            convertFormulas();
+        }
+    });
+
+    // 监听ESC键取消
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && isProcessing) {
+            shouldStop = true;
+            updateStatus('正在取消...');
+        }
+    });
 
     // 页面加载完成后检查公式数量
     setTimeout(() => {
