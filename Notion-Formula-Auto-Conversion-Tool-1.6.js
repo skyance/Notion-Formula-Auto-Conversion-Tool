@@ -386,30 +386,51 @@
     }
 
     // 文本输入模拟
-    async function simulateTyping(text) {
+    async function simulateTyping(text, quick = false) {
         const activeElement = document.activeElement;
         if (activeElement) {
-            // 使用 input 事件来输入文本
-            for (const char of text) {
+            if (quick) {
+                // 快速模式：直接插入整段文本 (模拟粘贴)
                 const inputEvent = new InputEvent('beforeinput', {
                     bubbles: true,
                     cancelable: true,
                     inputType: 'insertText',
-                    data: char
+                    data: text
                 });
                 activeElement.dispatchEvent(inputEvent);
                 
-                document.execCommand('insertText', false, char);
+                document.execCommand('insertText', false, text);
                 
                 const inputEventAfter = new InputEvent('input', {
                     bubbles: true,
                     cancelable: false,
                     inputType: 'insertText',
-                    data: char
+                    data: text
                 });
                 activeElement.dispatchEvent(inputEventAfter);
-                
-                await sleep(20);
+            } else {
+                // 普通模式：逐字输入 (用于触发命令菜单等)
+                for (const char of text) {
+                    const inputEvent = new InputEvent('beforeinput', {
+                        bubbles: true,
+                        cancelable: true,
+                        inputType: 'insertText',
+                        data: char
+                    });
+                    activeElement.dispatchEvent(inputEvent);
+                    
+                    document.execCommand('insertText', false, char);
+                    
+                    const inputEventAfter = new InputEvent('input', {
+                        bubbles: true,
+                        cancelable: false,
+                        inputType: 'insertText',
+                        data: char
+                    });
+                    activeElement.dispatchEvent(inputEventAfter);
+                    
+                    await sleep(5);
+                }
             }
         }
     }
@@ -507,7 +528,7 @@
                 await sleep(100);
                 
                 // 清空并输入公式内容（去掉 $$ 符号）
-                await simulateTyping(content);
+                await simulateTyping(content, true);
                 await sleep(100);
 
                 // 按 Enter 完成编辑（而非 Escape），避免行序错乱
@@ -527,7 +548,7 @@
                 // 清空并输入公式内容（去掉 $ 符号）
                 document.execCommand('selectAll');
                 await sleep(30);
-                await simulateTyping(content);
+                await simulateTyping(content, true);
                 await sleep(50);
                 
                 // 按 Enter 确认
@@ -613,7 +634,7 @@
                                 await sleep(80);
                                 
                                 // 输入公式内容
-                                await simulateTyping(content);
+                                await simulateTyping(content, true);
                                 await sleep(80);
                                 
                                 // 按 Escape 完成编辑
