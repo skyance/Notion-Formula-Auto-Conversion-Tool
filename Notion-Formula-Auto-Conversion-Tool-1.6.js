@@ -442,10 +442,25 @@
         await simulateClick(element);
     }
 
+    // 检查元素是否在表格内
+    function isInTable(element) {
+        return !!element.closest('.notion-simple-table-block, .notion-table-view, [role="gridcell"], [role="cell"], td, th');
+    }
+
     // 优化的公式转换
     async function convertFormula(editor, formulaObj) {
         try {
-            const { formula, type, content } = formulaObj;
+            let { formula, type, content } = formulaObj;
+
+            // 如果在表格内，强制使用行内公式模式（表格内不支持/block equation）
+            if (type === 'block' && isInTable(editor)) {
+                console.log('检测到表格内块公式，自动转换为行内模式');
+                type = 'inline';
+                // 可选：添加 displaystyle 以保持块级显示效果
+                // if (!content.trim().startsWith('\\displaystyle')) {
+                //    content = '\\displaystyle ' + content;
+                // }
+            }
             const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
             const textNodes = [];
             let node;
