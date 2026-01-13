@@ -1,11 +1,12 @@
 // ==UserScript==
 // @name         Notion-Formula-Auto-Conversion-Tool
 // @namespace    http://tampermonkey.net/
-// @version      1.7
+// @version      2.0
 // @description  自动公式转换工具
-// @author       YourName
+// @author       skyance
 // @match        https://www.notion.so/*
 // @grant        GM_addStyle
+// @github       https://github.com/skyance/Notion-Formula-Auto-Conversion-Tool
 // @require      https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js
 // @downloadURL https://update.greasyfork.org/scripts/525730/Notion-Formula-Auto-Conversion-Tool.user.js
 // @updateURL https://update.greasyfork.org/scripts/525730/Notion-Formula-Auto-Conversion-Tool.meta.js
