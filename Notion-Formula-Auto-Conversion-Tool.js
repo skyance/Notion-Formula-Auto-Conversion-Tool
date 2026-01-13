@@ -520,7 +520,7 @@
                 await sleep(80);
                 
                 // 输入 /block equation 命令
-                await simulateTyping('/block equation');
+                await simulateTyping('/block equation', true);
                 await sleep(240);
 
                 // 优先按 Enter 选择命令
@@ -626,7 +626,7 @@
                                 await sleep(80);
                                 
                                 // 重新输入 /block equation 命令
-                                await simulateTyping('/block equation');
+                                await simulateTyping('/block equation', true);
                                 await sleep(240);
                                 
                                 // 优先按 Enter 选择命令
