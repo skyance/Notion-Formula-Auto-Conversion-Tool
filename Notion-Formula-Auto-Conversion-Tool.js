@@ -134,9 +134,8 @@
     // 初始检测
     updateCount();
 
-    // 监听页面变化（用户编辑、新增公式等）
     const observer = new MutationObserver(() => {
-      updateCount();
+      // 仅用于其他 UI 变化检测（如侧边栏显隐），不再触发公式扫描
     });
     observer.observe(document.body, {
       childList: true,
