@@ -19,7 +19,7 @@
             position: fixed;
             bottom: 82px;
             right: 16px;
-            z-index: 999;
+            z-index: 1;
             height: 40px;
             width: 40px;
             border-radius: 22px;
@@ -34,7 +34,7 @@
             cursor: pointer;
             transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1),
                         border-radius 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-            font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, sans-serif;
+            font-family: 'Apple Chancery', 'Gabriola', 'Georgia', 'Times New Roman', serif;
             user-select: none;
         }
         #formula-helper.hover,
@@ -52,7 +52,7 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            font-family: 'Lyon-Text', 'Georgia', 'Times New Roman', serif;
+            font-family: 'Apple Chancery', 'Gabriola', 'Georgia', 'Times New Roman', serif;
             font-size: 19px;
             font-weight: 400;
             color: rgb(55, 53, 47);
@@ -81,7 +81,7 @@
             transition: width 0.3s ease;
         }
         .progress-text {
-            font-size: 12px;
+            font-size: 14px;
             color: rgba(55, 53, 47, 0.7);
             font-variant-numeric: tabular-nums;
         }
@@ -204,11 +204,11 @@
     const className =
       typeof element.className === "string"
         ? element.className
-            .trim()
-            .split(/\s+/)
-            .filter(Boolean)
-            .slice(0, 4)
-            .join(".")
+          .trim()
+          .split(/\s+/)
+          .filter(Boolean)
+          .slice(0, 4)
+          .join(".")
         : "";
     const classes = className ? `.${className}` : "";
     const role = element.getAttribute?.("role");
@@ -1102,6 +1102,37 @@
 
   // 初始化
   createPanel();
+
+  // ===== 检测 Notion 侧边栏/设置面板，自动隐藏按钮 =====
+  function shouldHide() {
+    return (
+      document.querySelector('.chat_sidebar') ||
+      document.querySelector('.notion-space-settings') ||
+      document.querySelector('.notion-dialog')
+    );
+  }
+
+  const sidebarObserver = new MutationObserver(() => {
+    const helper = document.getElementById('formula-helper');
+    if (!helper) return;
+
+    if (shouldHide()) {
+      if (helper.style.display !== 'none') {
+        helper.style.display = 'none';
+      }
+    } else {
+      if (helper.style.display !== '') {
+        helper.style.display = '';
+      }
+    }
+  });
+
+  sidebarObserver.observe(document.body, {
+    childList: true,
+    subtree: true,
+    attributes: true,
+    attributeFilter: ['class']
+  });
 
   // 监听ESC键取消
   document.addEventListener("keydown", (e) => {
