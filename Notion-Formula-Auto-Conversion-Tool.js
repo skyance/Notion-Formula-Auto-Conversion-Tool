@@ -1105,6 +1105,7 @@
   // ===== 检测 Notion 侧边栏/设置面板，自动隐藏按钮 =====
   function shouldHide() {
     return (
+      !document.querySelector('.layout-content') ||
       document.querySelector('.chat_sidebar') ||
       document.querySelector('.notion-space-settings') ||
       document.querySelector('.notion-dialog')
