@@ -1102,10 +1102,10 @@
   // 初始化
   createPanel();
 
-  // ===== 检测 Notion 侧边栏/设置面板，自动隐藏按钮 =====
+  // ===== 检测 Notion 侧边栏/设置面板/对话框/其他页面，自动隐藏按钮 =====
   function shouldHide() {
     return (
-      !document.querySelector('.layout-content') ||
+      !document.querySelector('.notion-topbar-share-menu') ||
       document.querySelector('.chat_sidebar') ||
       document.querySelector('.notion-space-settings') ||
       document.querySelector('.notion-dialog')
