@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Notion-Formula-Auto-Conversion-Tool
 // @namespace    http://tampermonkey.net/
-// @version      3.2.0
+// @version      3.3.0
 // @description  Notion 自动公式转换工具
 // @author       skyance、0xstrid、fengjy73、Sparidae、ckrvxr
 // @match        https://www.notion.so/*
@@ -84,6 +84,11 @@
             font-size: 14px;
             color: rgba(55, 53, 47, 0.7);
             font-variant-numeric: tabular-nums;
+        }
+        @media (prefers-color-scheme: dark) {
+            #formula-helper {
+                background: rgb(211, 211, 211);
+            }
         }
     `);
 
