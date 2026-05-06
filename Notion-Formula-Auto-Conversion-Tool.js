@@ -166,8 +166,10 @@
     let lastCount = -1;
     const updateCount = () => {
       if (isProcessing) return;
-      const formulas = findFormulas(document.body.textContent || "");
-      const count = formulas.length;
+      let count = 0;
+      for (const editor of getEditableEditors()) {
+        count += findFormulas(editor.textContent).length;
+      }
       if (count !== lastCount) {
         lastCount = count;
         progressText.textContent = count ? `${count}` : "0";
