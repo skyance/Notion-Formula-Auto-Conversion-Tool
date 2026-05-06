@@ -61,7 +61,7 @@
       justify-content: center;
       font-family: 'Apple Chancery', 'Gabriola', 'Georgia', 'Times New Roman', serif;
       font-size: 19px;
-      font-weight: 400;
+      font-weight: 700;
       color: rgb(55, 53, 47);
       line-height: 1;
     }
