@@ -264,157 +264,30 @@
     };
   }
 
-  function findClosingSingleDollar(text, startIndex) {
-    for (let i = startIndex; i < text.length; i++) {
-      if (text[i] === "\n") {
-        return -1;
-      }
-      if (text[i] !== "$" || isEscaped(text, i) || text[i + 1] === "$") {
-        continue;
-      }
-      return i;
-    }
-    return -1;
-  }
-
-  function findClosingDoubleDollar(text, startIndex) {
-    for (let i = startIndex; i < text.length - 1; i++) {
-      if (text[i] === "$" && text[i + 1] === "$" && !isEscaped(text, i)) {
-        return i;
-      }
-    }
-    return -1;
-  }
-
-  function findClosingLatex(text, startIndex, closeChar) {
-    for (let i = startIndex; i < text.length - 1; i++) {
-      if (
-        text[i] === "\\" &&
-        text[i + 1] === closeChar &&
-        !isEscaped(text, i)
-      ) {
-        return i;
-      }
-    }
-    return -1;
-  }
-
-  function isValidInlineDollar(text, start, end) {
-    const content = text.slice(start + 1, end);
-    if (!content.trim() || /\n/.test(content)) {
-      return false;
-    }
-
-    const firstChar = text[start + 1];
-    const lastChar = text[end - 1];
-    if (
-      !firstChar ||
-      !lastChar ||
-      /\s/.test(firstChar) ||
-      /\s/.test(lastChar)
-    ) {
-      return false;
-    }
-
-    return true;
-  }
-
-  function buildFormulaToken(
-    text,
-    start,
-    end,
-    openLength,
-    closeLength,
-    type,
-    syntax,
-  ) {
-    const boundaries = findLineBoundaries(text, start, end);
-    return {
-      raw: text.slice(start, end),
-      start,
-      end,
-      type,
-      syntax,
-      content: text.slice(start + openLength, end - closeLength),
-      lineStart: boundaries.lineStart,
-      lineEnd: boundaries.lineEnd,
-      standaloneBlock: type === "block" ? boundaries.standaloneBlock : false,
-    };
-  }
-
   // 公式查找
   function findFormulas(text) {
     const formulas = [];
+    const re = /(?:(\$\$)([\s\S]*?)\1)|(?:\\\[([\s\S]*?)\\\])|(?:\\\(([\s\S]*?)\\\))|(?<![\w\\$])(\$)(?!\d)([^\$\n]+?)\5(?![$\w])/g;
 
-    for (let i = 0; i < text.length; i++) {
-      if (text[i] === "$" && !isEscaped(text, i)) {
-        if (text[i + 1] === "$") {
-          const closeIndex = findClosingDoubleDollar(text, i + 2);
-          if (closeIndex !== -1) {
-            const end = closeIndex + 2;
-            const token = buildFormulaToken(text, i, end, 2, 2, "block", "$$");
-            if (token.content.trim()) {
-              formulas.push(token);
-            }
-            i = end - 1;
-            continue;
-          }
-        } else {
-          const closeIndex = findClosingSingleDollar(text, i + 1);
-          if (closeIndex !== -1 && isValidInlineDollar(text, i, closeIndex)) {
-            const end = closeIndex + 1;
-            formulas.push(buildFormulaToken(text, i, end, 1, 1, "inline", "$"));
-            i = end - 1;
-            continue;
-          }
-        }
-      }
+    let m;
+    while ((m = re.exec(text)) !== null) {
+      let content, type, syntax;
+      if (m[1]) { content = m[2]; type = "block"; syntax = "$$"; }
+      else if (m[3]) { content = m[3]; type = "block"; syntax = "\\[\\]"; }
+      else if (m[4]) { content = m[4]; type = "inline"; syntax = "\\(\\)"; }
+      else if (m[5]) { content = m[6]; type = "inline"; syntax = "$"; }
+      if (!content || !content.trim()) continue;
 
-      if (text[i] === "\\" && !isEscaped(text, i)) {
-        if (text[i + 1] === "(") {
-          const closeIndex = findClosingLatex(text, i + 2, ")");
-          if (closeIndex !== -1) {
-            const end = closeIndex + 2;
-            const token = buildFormulaToken(
-              text,
-              i,
-              end,
-              2,
-              2,
-              "inline",
-              "\\(\\)",
-            );
-            if (token.content.trim()) {
-              formulas.push(token);
-            }
-            i = end - 1;
-            continue;
-          }
-        }
-
-        if (text[i + 1] === "[") {
-          const closeIndex = findClosingLatex(text, i + 2, "]");
-          if (closeIndex !== -1) {
-            const end = closeIndex + 2;
-            const token = buildFormulaToken(
-              text,
-              i,
-              end,
-              2,
-              2,
-              "block",
-              "\\[\\]",
-            );
-            if (token.content.trim()) {
-              formulas.push(token);
-            }
-            i = end - 1;
-            continue;
-          }
-        }
-      }
+      const start = m.index;
+      const end = m.index + m[0].length;
+      const b = findLineBoundaries(text, start, end);
+      formulas.push({
+        raw: m[0], start, end, type, syntax,
+        content: content.trim(),
+        lineStart: b.lineStart, lineEnd: b.lineEnd,
+        standaloneBlock: type === "block" ? b.standaloneBlock : false,
+      });
     }
-
     return formulas;
   }
 
