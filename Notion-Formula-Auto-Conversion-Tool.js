@@ -6,6 +6,10 @@
 // @author       skyance、0xstrid、fengjy73、Sparidae、ckrvxr
 // @match        https://www.notion.so/*
 // @grant        GM_addStyle
+// @grant        GM_registerMenuCommand
+// @grant        GM_unregisterMenuCommand
+// @grant        GM_setValue
+// @grant        GM_getValue
 // @github       https://github.com/skyance/Notion-Formula-Auto-Conversion-Tool
 // @downloadURL https://update.greasyfork.org/scripts/525730/Notion-Formula-Auto-Conversion-Tool.user.js
 // @updateURL https://update.greasyfork.org/scripts/525730/Notion-Formula-Auto-Conversion-Tool.meta.js
@@ -105,8 +109,34 @@
   let hoverTimer = null;
   const DEBUG_MODE = false;
 
+  // ---------- 速度配置 ----------
+  const SPEED_PRESETS = {
+    slow:   { label: "慢速",   delay: 111 },
+    normal: { label: "中速",   delay: 11 },
+    fast:   { label: "快速",   delay: 1  },
+    custom: { label: "自定义", delay: null },
+  };
+
+  const getDelay = () => {
+    const speed = GM_getValue("speed", "normal");
+    return speed === "custom" ? GM_getValue("customDelay", 30) : SPEED_PRESETS[speed].delay;
+  };
+
   // ---------- 工具函数 ----------
-  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, getDelay()));
+
+  // ---------- 菜单状态 ----------
+  let totalConverted = GM_getValue("totalConverted", 0);
+  let totalMenuId = null;
+  let panelVisible = GM_getValue("panelVisible", true);
+
+  function refreshTotalMenu() {
+    if (totalMenuId !== null) GM_unregisterMenuCommand(totalMenuId);
+    totalMenuId = GM_registerMenuCommand(
+      `📊 累计转换: ${totalConverted} 个公式`,
+      () => {}
+    );
+  }
 
   function updateProgress(current, total, textOverride = null) {
     const percent = total > 0 ? (current / total) * 100 : 0;
@@ -127,6 +157,7 @@
         </div>
     `;
     document.body.appendChild(panel);
+    if (!panelVisible) panel.style.display = "none";
 
     progressBar = panel.querySelector(".progress-bar-fill");
     progressText = panel.querySelector(".progress-text");
@@ -862,6 +893,8 @@
             const result = await convertFormula(editor, formulaObj);
             if (result) {
               formulaCount++;
+              totalConverted++;
+              GM_setValue("totalConverted", totalConverted);
               updateProgress(formulaCount, totalFormulas, `${formulaCount}/${totalFormulas}`);
             }
           }
@@ -869,6 +902,7 @@
       }
 
       updateProgress(totalFormulas, totalFormulas, shouldStop ? "Stopped" : "Done");
+      refreshTotalMenu();
     } finally {
       isProcessing = false;
       panel.classList.remove("processing");
@@ -987,6 +1021,51 @@
   // 初始化
   createPanel();
 
+  // ---------- 注册菜单 ----------
+  const speedOrder = ["slow", "normal", "fast", "custom"];
+  const menuIds = { toggle: null, speed: null };
+
+  function refreshToggleMenu() {
+    if (menuIds.toggle !== null) GM_unregisterMenuCommand(menuIds.toggle);
+    menuIds.toggle = GM_registerMenuCommand(`👀 悬浮按钮: ${panelVisible ? "隐藏" : "显示"}`, () => {
+      panelVisible = !panelVisible;
+      GM_setValue("panelVisible", panelVisible);
+      const helper = document.getElementById("formula-helper");
+      if (helper) helper.style.display = panelVisible ? "" : "none";
+      refreshToggleMenu();
+    });
+  }
+
+  function refreshSpeedMenu() {
+    if (menuIds.speed !== null) GM_unregisterMenuCommand(menuIds.speed);
+    const speed = GM_getValue("speed", "normal");
+    const label = speed === "custom"
+      ? `自定义(${GM_getValue("customDelay", 30)}ms)`
+      : SPEED_PRESETS[speed].label;
+    menuIds.speed = GM_registerMenuCommand(`⚡ 转换速度: ${label}`, () => {
+      const cur = GM_getValue("speed", "normal");
+      const idx = speedOrder.indexOf(cur);
+      const next = speedOrder[(idx + 1) % speedOrder.length];
+      if (next === "custom") {
+        const input = prompt("请输入自定义延迟(毫秒):", GM_getValue("customDelay", 30));
+        const val = parseInt(input, 10);
+        if (!isNaN(val) && val >= 0) GM_setValue("customDelay", val);
+        else return;
+      }
+      GM_setValue("speed", next);
+      refreshSpeedMenu();
+    });
+  }
+
+  GM_registerMenuCommand("🔄 执行公式转换", () => { if (!isProcessing) convertFormulas(); });
+
+  refreshToggleMenu();
+  refreshSpeedMenu();
+
+  GM_registerMenuCommand("🔗 反馈问题", () => window.open("https://github.com/skyance/Notion-Formula-Auto-Conversion-Tool/issues"));
+
+  refreshTotalMenu();
+
   // ===== 检测 Notion 侧边栏/设置面板/对话框/其他页面，自动隐藏按钮 =====
   function shouldHide() {
     return (
@@ -1000,6 +1079,13 @@
   const sidebarObserver = new MutationObserver(() => {
     const helper = document.getElementById('formula-helper');
     if (!helper) return;
+
+    if (!panelVisible) {
+      if (helper.style.display !== 'none') {
+        helper.style.display = 'none';
+      }
+      return;
+    }
 
     if (shouldHide()) {
       if (helper.style.display !== 'none') {
