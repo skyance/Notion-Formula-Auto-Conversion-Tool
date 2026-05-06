@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Notion-Formula-Auto-Conversion-Tool
 // @namespace    http://tampermonkey.net/
-// @version      3.3.0
+// @version      3.3.1
 // @description  Notion 自动公式转换工具
 // @author       skyance、0xstrid、fengjy73、Sparidae、ckrvxr
 // @match        https://www.notion.so/*
@@ -15,82 +15,89 @@
   "use strict";
 
   GM_addStyle(`
-        #formula-helper {
-            position: fixed;
-            bottom: 82px;
-            right: 16px;
-            z-index: 1;
-            height: 40px;
-            width: 40px;
-            border-radius: 22px;
-            background: #ffffff;
-            box-shadow: 0px 6px 16px -4px rgba(0, 0, 0, 0.08),
-                        0px 8px 12px 0px rgba(25,25,25,.027),
-                        0px 2px 6px 0px rgba(25,25,25,.027),
-                        0px 0px 0px 1px rgba(42,28,0,.10);
-            display: flex;
-            align-items: center;
-            overflow: hidden;
-            cursor: pointer;
-            transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1),
-                        border-radius 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-            font-family: 'Apple Chancery', 'Gabriola', 'Georgia', 'Times New Roman', serif;
-            user-select: none;
-        }
-        #formula-helper.hover,
-        #formula-helper.processing {
-            width: 200px;
-            border-radius: 22px;
-        }
-        #formula-helper > * {
-            pointer-events: none;
-        }
-        .button-icon {
-            width: 40px;
-            height: 40px;
-            flex-shrink: 0;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-family: 'Apple Chancery', 'Gabriola', 'Georgia', 'Times New Roman', serif;
-            font-size: 19px;
-            font-weight: 400;
-            color: rgb(55, 53, 47);
-            line-height: 1;
-        }
-        .progress-wrapper {
-            display: flex;
-            align-items: center;
-            flex-grow: 1;
-            overflow: hidden;
-            padding-right: 12px;
-            white-space: nowrap;
-        }
-        .progress-bar-container {
-            flex-grow: 1;
-            height: 4px;
-            background: rgba(55, 53, 47, 0.09);
-            border-radius: 2px;
-            margin-right: 8px;
-        }
-        .progress-bar-fill {
-            width: 0%;
-            height: 100%;
-            background: rgb(35, 131, 226);
-            border-radius: 2px;
-            transition: width 0.3s ease;
-        }
-        .progress-text {
-            font-size: 14px;
-            color: rgba(55, 53, 47, 0.7);
-            font-variant-numeric: tabular-nums;
-        }
-        @media (prefers-color-scheme: dark) {
-            #formula-helper {
-                background: rgb(211, 211, 211);
-            }
-        }
-    `);
+    #formula-helper {
+      position: absolute;
+      bottom: 100px;
+      right: 30px;
+      z-index: 1;
+      height: 40px;
+      width: 40px;
+      border-radius: 22px;
+      background: #ffffff;
+      box-shadow: 0px 6px 16px -4px rgba(0, 0, 0, 0.08),
+                  0px 8px 12px 0px rgba(25,25,25,.027),
+                  0px 2px 6px 0px rgba(25,25,25,.027),
+                  0px 0px 0px 1px rgba(42,28,0,.10);
+      display: flex;
+      align-items: center;
+      overflow: hidden;
+      cursor: pointer;
+      transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+                  border-radius 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+                  transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      font-family: 'Apple Chancery', 'Gabriola', 'Georgia', 'Times New Roman', serif;
+      font-weight: 700;
+      user-select: none;
+    }
+    #formula-helper.hover,
+    #formula-helper.processing {
+      width: 200px;
+      border-radius: 22px;
+      transform: scale(1.08);
+    }
+    #formula-helper > * {
+      pointer-events: none;
+    }
+    .button-icon {
+      width: 40px;
+      height: 40px;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: 'Apple Chancery', 'Gabriola', 'Georgia', 'Times New Roman', serif;
+      font-size: 19px;
+      font-weight: 400;
+      color: rgb(55, 53, 47);
+      line-height: 1;
+    }
+    .progress-wrapper {
+      display: flex;
+      align-items: center;
+      flex-grow: 1;
+      overflow: hidden;
+      padding-right: 12px;
+      white-space: nowrap;
+    }
+    .progress-bar-container {
+      flex-grow: 1;
+      height: 4px;
+      background: rgba(55, 53, 47, 0.09);
+      border-radius: 2px;
+      margin-right: 8px;
+    }
+    .progress-bar-fill {
+      width: 0%;
+      height: 100%;
+      background: rgb(35, 131, 226);
+      border-radius: 2px;
+      transition: width 0.3s ease;
+    }
+    .progress-text {
+      font-size: 14px;
+      color: rgba(55, 53, 47, 0.7);
+      font-variant-numeric: tabular-nums;
+    }
+    @media (prefers-color-scheme: dark) {
+      #formula-helper {
+        background: rgb(211, 211, 211);
+      }
+    }
+    .notion-assistant-corner-origin-container > div[style*="display: flex"] {
+      inset-inline-end: unset !important;
+      right: 4px !important;
+    }
+  `);
 
   let panel, progressBar, progressText;
   let isProcessing = false;
