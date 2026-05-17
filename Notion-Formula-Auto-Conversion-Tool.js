@@ -97,7 +97,7 @@
         background: rgb(211, 211, 211);
       }
     }
-    .notion-assistant-corner-origin-container > div[style*="display: flex"] {
+    .notion-assistant-corner-origin-container > div {
       inset-inline-end: unset !important;
       right: 4px !important;
     }
