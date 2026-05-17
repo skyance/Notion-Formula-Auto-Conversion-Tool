@@ -35,7 +35,7 @@
       display: flex;
       align-items: center;
       overflow: hidden;
-      cursor: grab;
+      cursor: pointer;
       touch-action: none;
       transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1),
                   border-radius 0.25s cubic-bezier(0.4, 0, 0.2, 1),
@@ -206,7 +206,7 @@
         panel.style.bottom = b + "px";
         GM_setValue("panelRight", r);
         GM_setValue("panelBottom", b);
-        panel.style.cursor = "grab";
+        panel.style.cursor = "pointer";
         panel.style.transition = "";
         const blockClick = (e) => {
           e.stopImmediatePropagation();
