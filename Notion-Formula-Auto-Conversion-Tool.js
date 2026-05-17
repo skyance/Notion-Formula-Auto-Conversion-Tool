@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Notion-Formula-Auto-Conversion-Tool
 // @namespace    http://tampermonkey.net/
-// @version      3.3.1
+// @version      3.3.2
 // @description  Notion 自动公式转换工具
 // @author       skyance、0xstrid、fengjy73、Sparidae、ckrvxr
 // @match        https://www.notion.so/*
