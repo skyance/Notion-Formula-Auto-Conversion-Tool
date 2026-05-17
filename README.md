@@ -2,7 +2,7 @@
 
 ## 💻 演示
 
-https://github.com/user-attachments/assets/217f2e86-a4d6-4a98-8940-49f24ca90e32
+https://github.com/user-attachments/assets/b14c5afa-d8dc-4266-bc95-e6b8627f6643
 
 ## ✨ 特点
 
