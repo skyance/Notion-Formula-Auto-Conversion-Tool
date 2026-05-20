@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Notion-Formula-Auto-Conversion-Tool
 // @namespace    http://tampermonkey.net/
-// @version      3.4.0
+// @version      3.4.1
 // @description  Notion 自动公式转换工具
 // @author       skyance、0xstrid、fengjy73、Sparidae、ckrvxr
 // @match        https://www.notion.so/*
@@ -262,15 +262,6 @@
 
     // 初始检测
     updateCount();
-
-    const observer = new MutationObserver(() => {
-      // 仅用于其他 UI 变化检测（如侧边栏显隐），不再触发公式扫描
-    });
-    observer.observe(document.body, {
-      childList: true,
-      subtree: true,
-      characterData: true
-    });
 
     // Hover 逻辑
     panel.addEventListener("mouseenter", () => {
