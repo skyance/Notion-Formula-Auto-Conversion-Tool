@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Notion-Formula-Auto-Conversion-Tool
 // @namespace    http://tampermonkey.net/
-// @version      3.3.1
+// @version      3.4.1
 // @description  Notion 自动公式转换工具
 // @author       skyance、0xstrid、fengjy73、Sparidae、ckrvxr
 // @match        https://www.notion.so/*
@@ -20,10 +20,10 @@
 
   GM_addStyle(`
     #formula-helper {
-      position: absolute;
-      bottom: 100px;
+      position: fixed;
       right: 30px;
-      z-index: 1;
+      bottom: 100px;
+      z-index: 9999;
       height: 40px;
       width: 40px;
       border-radius: 22px;
@@ -36,6 +36,7 @@
       align-items: center;
       overflow: hidden;
       cursor: pointer;
+      touch-action: none;
       transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1),
                   border-radius 0.25s cubic-bezier(0.4, 0, 0.2, 1),
                   transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
@@ -96,10 +97,6 @@
       #formula-helper {
         background: rgb(211, 211, 211);
       }
-    }
-    .notion-assistant-corner-origin-container > div[style*="display: flex"] {
-      inset-inline-end: unset !important;
-      right: 4px !important;
     }
   `);
 
@@ -162,6 +159,93 @@
     progressBar = panel.querySelector(".progress-bar-fill");
     progressText = panel.querySelector(".progress-text");
 
+    // ---------- 拖拽 & 位置记忆 ----------
+    let dragState = null;
+    let dragTimer = null;
+
+    const savedRight = GM_getValue("panelRight", null);
+    const savedBottom = GM_getValue("panelBottom", null);
+    if (savedRight !== null && savedBottom !== null) {
+      panel.style.right = savedRight + "px";
+      panel.style.bottom = savedBottom + "px";
+    }
+
+    function startDrag(clientX, clientY) {
+      if (isProcessing || dragTimer) return;
+      const rect = panel.getBoundingClientRect();
+      dragState = {
+        offsetR: rect.right - clientX,
+        offsetB: rect.bottom - clientY,
+      };
+      dragTimer = setTimeout(() => {
+        dragState.activated = true;
+        panel.style.cursor = "grabbing";
+        panel.style.transition = "none";
+      }, 500);
+    }
+
+    function moveDrag(clientX, clientY) {
+      if (!dragState?.activated) return;
+      let r = window.innerWidth - clientX - dragState.offsetR;
+      let b = window.innerHeight - clientY - dragState.offsetB;
+      r = Math.max(0, Math.min(window.innerWidth - panel.offsetWidth, r));
+      b = Math.max(0, Math.min(window.innerHeight - panel.offsetHeight, b));
+      panel.style.right = r + "px";
+      panel.style.bottom = b + "px";
+    }
+
+    function endDrag() {
+      clearTimeout(dragTimer);
+      dragTimer = null;
+      if (!dragState) return;
+      if (dragState.activated) {
+        const rect = panel.getBoundingClientRect();
+        const r = Math.max(0, Math.min(window.innerWidth - rect.width, window.innerWidth - rect.right));
+        const b = Math.max(0, Math.min(window.innerHeight - rect.height, window.innerHeight - rect.bottom));
+        panel.style.right = r + "px";
+        panel.style.bottom = b + "px";
+        GM_setValue("panelRight", r);
+        GM_setValue("panelBottom", b);
+        panel.style.cursor = "pointer";
+        panel.style.transition = "";
+        const blockClick = (e) => {
+          e.stopImmediatePropagation();
+          document.removeEventListener("click", blockClick, true);
+        };
+        document.addEventListener("click", blockClick, true);
+        dragState = null;
+      } else {
+        dragState = null;
+      }
+    }
+
+    panel.addEventListener("mousedown", (e) => {
+      startDrag(e.clientX, e.clientY);
+      e.preventDefault();
+    });
+
+    document.addEventListener("mousemove", (e) => {
+      moveDrag(e.clientX, e.clientY);
+    });
+
+    document.addEventListener("mouseup", () => {
+      endDrag();
+    });
+
+    panel.addEventListener("touchstart", (e) => {
+      const t = e.touches[0];
+      startDrag(t.clientX, t.clientY);
+    }, { passive: true });
+
+    document.addEventListener("touchmove", (e) => {
+      const t = e.touches[0];
+      moveDrag(t.clientX, t.clientY);
+    }, { passive: true });
+
+    document.addEventListener("touchend", () => {
+      endDrag();
+    }, { passive: true });
+
     // 自动检测待处理个数
     let lastCount = -1;
     const updateCount = () => {
@@ -178,15 +262,6 @@
 
     // 初始检测
     updateCount();
-
-    const observer = new MutationObserver(() => {
-      // 仅用于其他 UI 变化检测（如侧边栏显隐），不再触发公式扫描
-    });
-    observer.observe(document.body, {
-      childList: true,
-      subtree: true,
-      characterData: true
-    });
 
     // Hover 逻辑
     panel.addEventListener("mouseenter", () => {
@@ -207,7 +282,7 @@
       }, 800);
     });
 
-    // 点击处理
+    // 点击处理（拖拽时不触发）
     panel.addEventListener("click", (e) => {
       e.stopPropagation();
       if (isProcessing) {
@@ -300,7 +375,7 @@
   // 公式查找
   function findFormulas(text) {
     const formulas = [];
-    const re = /(?:(\$\$)([\s\S]*?)\1)|(?:\\\[([\s\S]*?)\\\])|(?:\\\(([\s\S]*?)\\\))|(?<![\w\\$])(\$)(?!\d)([^\$\n]+?)\5(?![$\w])/g;
+    const re = /(?:(\$\$)([\s\S]*?)\1)|(?:\\\[([\s\S]*?)\\\])|(?:\\\(([\s\S]*?)\\\))|(?<!\$)(\$)([^\$\n]+?)\5(?!\$)/g;
 
     let m;
     while ((m = re.exec(text)) !== null) {
