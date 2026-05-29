@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Notion-Formula-Auto-Conversion-Tool
 // @namespace    http://tampermonkey.net/
-// @version      3.0
+// @version      3.1
 // @description  自动公式转换工具
 // @author       skyance、0xstride
 // @match        https://www.notion.so/*
@@ -629,7 +629,7 @@
 
   async function focusEditor(editor) {
     if (!editor) return;
-    editor.focus();
+    await ensureFocus(editor);
     await sleep(10);
   }
 
@@ -769,18 +769,28 @@
     return null;
   }
 
+  function isSimpleTableCellEditor(editor) {
+    return (
+      !!editor &&
+      !!editor.closest("td, th") &&
+      editor.matches(
+        '.notion-table-cell-text[contenteditable="true"], [data-content-editable-leaf="true"][contenteditable="true"]',
+      )
+    );
+  }
+
   function getEditableEditors() {
     return Array.from(
       document.querySelectorAll('[contenteditable="true"]'),
     ).filter((editor) => {
+      const simpleTableCell = isSimpleTableCellEditor(editor);
       if (editor.closest("#formula-helper")) {
         return false;
       }
-      if (
-        editor.closest(
-          '.notion-simple-table-block, .notion-table-view, [role="gridcell"], [role="cell"], td, th',
-        )
-      ) {
+      if (editor.closest('.notion-table-view, [role="gridcell"], [role="cell"]')) {
+        return false;
+      }
+      if (!simpleTableCell && editor.closest('.notion-simple-table-block, td, th')) {
         return false;
       }
       if (!editor.textContent || !editor.textContent.trim()) {
@@ -797,7 +807,10 @@
     const tasks = [];
 
     for (const editor of getEditableEditors()) {
-      const formulas = findFormulas(editor.textContent).filter(filterFn);
+      const simpleTableCell = isSimpleTableCellEditor(editor);
+      const formulas = findFormulas(editor.textContent).filter(
+        (formula) => filterFn(formula) && (!simpleTableCell || formula.type === "inline"),
+      );
       if (!formulas.length) {
         continue;
       }
@@ -822,14 +835,17 @@
 
   async function openInlineEquationEditor(editor, selectedRange = null) {
     const isMac = navigator.platform.toUpperCase().indexOf("MAC") >= 0;
+    await ensureFocus(editor);
+    await sleep(isSimpleTableCellEditor(editor) ? 16 : 8);
     restoreSelection(selectedRange);
+    await sleep(isSimpleTableCellEditor(editor) ? 16 : 8);
     debugLog("openInlineEquationEditor shortcut mode", {
       editor: describeElement(editor),
       selectedText: selectedRange?.toString() || "",
       activeElement: describeElement(document.activeElement),
     });
-    await simulateShortcut(isMac ? "Meta+Shift+E" : "Ctrl+Shift+E", editor);
-    await sleep(10);
+    await simulateShortcut(isMac ? "Meta+Shift+E" : "Ctrl+Shift+E", document.activeElement || editor);
+    await sleep(isSimpleTableCellEditor(editor) ? 20 : 10);
     return true;
   }
 
@@ -909,6 +925,16 @@
   // 聚焦到目标元素，避免行顺序错位
   async function ensureFocus(element) {
     if (!element) return;
+
+    // 表格单元格需要先激活 td 父元素，才能让内部编辑器真正进入编辑状态
+    if (isSimpleTableCellEditor(element)) {
+      const td = element.closest("td, th");
+      if (td && document.activeElement !== element) {
+        await simulateClick(td);
+        await sleep(40);
+      }
+    }
+
     element.focus();
     await sleep(8);
     if (document.activeElement !== element) {
@@ -1012,7 +1038,11 @@
         }
 
         // 仅在焦点进入独立公式输入框时继续，避免误伤正文
-        const inlineInput = await waitForInlineInput(editor);
+        const inlineInput = await waitForInlineInput(
+          editor,
+          isSimpleTableCellEditor(editor) ? 30 : 8,
+          isSimpleTableCellEditor(editor) ? 25 : 12,
+        );
         if (!inlineInput) {
           updateStatus(
             "行内公式输入框未打开，已跳过当前公式以避免误替换",
