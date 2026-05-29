@@ -1,36 +1,15 @@
-# Notion公式自动转换工具 ✨
+# Notion公式自动转换工具 
 
-## Demo
+## 💻 演示
 
-![公式转换演示](https://github.com/user-attachments/assets/46c4177d-31cc-4c37-9a26-bbbff2195072)
+https://github.com/user-attachments/assets/b14c5afa-d8dc-4266-bc95-e6b8627f6643
 
-## 新版本UI：
+## ✨ 特点
 
-<div style="display: flex; gap: 10px; align-items: flex-start;">
-  <div>
-    <p style="text-align: center; font-weight: bold;">转换前:</p>
-    <img style="max-width: 100%; height: auto;" src="https://github.com/user-attachments/assets/a5bee541-11e8-4bac-9f10-3900f437e8db" />
-  </div>
-  <div>
-    <p style="text-align: center; font-weight: bold;">转换中:</p>
-    <img style="max-width: 100%; height: auto;" src="https://github.com/user-attachments/assets/c41be7e9-c4e9-43ae-b9db-e6409a0a5f00" />
-  </div>
-  <div>
-    <p style="text-align: center; font-weight: bold;">转换后:</p>
-    <img style="max-width: 100%; height: auto;" src="https://github.com/user-attachments/assets/d982b1f1-5c77-45ee-8f63-4e5496556af1" />
-  </div>
-</div>
-
-## ✨ 功能特点
-
-- **智能表格处理**：自动检测表格环境，将块级公式转换为行内公式，避免表格排版错乱。
 - **一键批量转换**：点击悬浮按钮即可扫描全文档并自动转换所有公式，解放双手。
 - **实时进度反馈**：提供可视化的进度条和状态提示，实时显示转换进度和剩余数量。
-- **自动纠错机制**：内置重试逻辑，自动检测并修复转换失败的块级公式。
-- **优雅的交互体验**：
-  - 悬浮球设计，支持自动折叠，不遮挡内容。
-  - 支持 `ESC` 键随时中断转换。
-  - 适配 Mac/Windows 。
+- **悬浮球设计**：悬浮球设计，支持自动折叠，可以拖动，不遮挡内容。
+- **多平台适配**：适配多个平台 ，已测试 Mac/Windows。
 
 ## 🛠️ 一键安装
 

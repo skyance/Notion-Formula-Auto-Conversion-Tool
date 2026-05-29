@@ -1,13 +1,16 @@
 // ==UserScript==
 // @name         Notion-Formula-Auto-Conversion-Tool
 // @namespace    http://tampermonkey.net/
-// @version      3.1
-// @description  自动公式转换工具
-// @author       skyance、0xstride
+// @version      3.4.1
+// @description  Notion 自动公式转换工具
+// @author       skyance、0xstrid、fengjy73、Sparidae、ckrvxr
 // @match        https://www.notion.so/*
 // @grant        GM_addStyle
+// @grant        GM_registerMenuCommand
+// @grant        GM_unregisterMenuCommand
+// @grant        GM_setValue
+// @grant        GM_getValue
 // @github       https://github.com/skyance/Notion-Formula-Auto-Conversion-Tool
-// @require      https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js
 // @downloadURL https://update.greasyfork.org/scripts/525730/Notion-Formula-Auto-Conversion-Tool.user.js
 // @updateURL https://update.greasyfork.org/scripts/525730/Notion-Formula-Auto-Conversion-Tool.meta.js
 // ==/UserScript==
@@ -16,305 +19,280 @@
   "use strict";
 
   GM_addStyle(`
-        /* 基础样式 */
-        #formula-helper {
-            position: fixed;
-            bottom: 90px;
-            right: 20px;
-            z-index: 9999;
-            background: white;
-            padding: 0;
-            border-radius: 12px;
-            box-shadow: rgba(0, 0, 0, 0.1) 0px 10px 30px,
-                       rgba(0, 0, 0, 0.1) 0px 1px 8px;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            min-width: 200px;
-            transform-origin: center;
-            will-change: transform;
-            overflow: hidden;
-        }
+    #formula-helper {
+      position: fixed;
+      right: 30px;
+      bottom: 100px;
+      z-index: 9999;
+      height: 40px;
+      width: 40px;
+      border-radius: 22px;
+      background: #ffffff;
+      box-shadow: 0px 6px 16px -4px rgba(0, 0, 0, 0.08),
+                  0px 8px 12px 0px rgba(25,25,25,.027),
+                  0px 2px 6px 0px rgba(25,25,25,.027),
+                  0px 0px 0px 1px rgba(42,28,0,.10);
+      display: flex;
+      align-items: center;
+      overflow: hidden;
+      cursor: pointer;
+      touch-action: none;
+      transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+                  border-radius 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+                  transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      font-family: 'Apple Chancery', 'Gabriola', 'Georgia', 'Times New Roman', serif;
+      font-weight: 700;
+      user-select: none;
+    }
+    #formula-helper.hover,
+    #formula-helper.processing {
+      width: 200px;
+      border-radius: 22px;
+      transform: scale(1.08);
+    }
+    #formula-helper > * {
+      pointer-events: none;
+    }
+    .button-icon {
+      width: 40px;
+      height: 40px;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: 'Apple Chancery', 'Gabriola', 'Georgia', 'Times New Roman', serif;
+      font-size: 19px;
+      font-weight: 700;
+      color: rgb(55, 53, 47);
+      line-height: 1;
+    }
+    .progress-wrapper {
+      display: flex;
+      align-items: center;
+      flex-grow: 1;
+      overflow: hidden;
+      padding-right: 12px;
+      white-space: nowrap;
+    }
+    .progress-bar-container {
+      flex-grow: 1;
+      height: 4px;
+      background: rgba(55, 53, 47, 0.09);
+      border-radius: 2px;
+      margin-right: 8px;
+    }
+    .progress-bar-fill {
+      width: 0%;
+      height: 100%;
+      background: rgb(35, 131, 226);
+      border-radius: 2px;
+      transition: width 0.3s ease;
+    }
+    .progress-text {
+      font-size: 14px;
+      color: rgba(55, 53, 47, 0.7);
+      font-variant-numeric: tabular-nums;
+    }
+    @media (prefers-color-scheme: dark) {
+      #formula-helper {
+        background: rgb(211, 211, 211);
+      }
+    }
+  `);
 
-        .content-wrapper {
-            padding: 16px;
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            transform-origin: center;
-        }
-
-        /* 收起状态 */
-        #formula-helper.collapsed {
-            width: 48px;
-            min-width: 48px;
-            height: 48px;
-            padding: 12px;
-            opacity: 0.9;
-            transform: scale(0.98);
-            border-radius: 50%;
-        }
-
-        #formula-helper.collapsed .content-wrapper {
-            opacity: 0;
-            transform: scale(0.8);
-            pointer-events: none;
-            transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
-        }
-
-        #formula-helper #convert-btn,
-        #formula-helper #progress-container,
-        #formula-helper #status-text {
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            opacity: 1;
-            transform: translateY(0);
-            transform-origin: center;
-        }
-
-        /* 收起按钮样式 */
-        #collapse-btn {
-            position: absolute;
-            top: 8px;
-            right: 8px;
-            width: 24px;
-            height: 24px;
-            border: none;
-            background: transparent;
-            cursor: pointer;
-            padding: 0;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            transform-origin: center;
-            z-index: 2;
-        }
-
-        #collapse-btn:hover {
-            transform: scale(1.1);
-        }
-
-        #collapse-btn:active {
-            transform: scale(0.95);
-        }
-
-        #collapse-btn svg {
-            width: 16px;
-            height: 16px;
-            fill: #4b5563;
-            transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1);
-        }
-
-        #formula-helper.collapsed #collapse-btn {
-            position: static;
-            width: 100%;
-            height: 100%;
-        }
-
-        #formula-helper.collapsed #collapse-btn svg {
-            transform: rotate(180deg);
-        }
-
-        @media (hover: hover) {
-            #formula-helper:not(.collapsed):hover {
-                transform: translateY(-2px);
-                box-shadow: rgba(0, 0, 0, 0.15) 0px 15px 35px,
-                           rgba(0, 0, 0, 0.12) 0px 3px 10px;
-            }
-
-            #formula-helper.collapsed:hover {
-                opacity: 1;
-                transform: scale(1.05);
-            }
-        }
-
-        /* 按钮样式 */
-        #convert-btn {
-            background: #2563eb;
-            color: white;
-            border: none;
-            padding: 10px 20px;
-            border-radius: 6px;
-            cursor: pointer;
-            margin-top: 20px;
-            margin-bottom: 12px;
-            width: 100%;
-            font-weight: 500;
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
-            position: relative;
-            overflow: hidden;
-        }
-
-        #convert-btn::after {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(255, 255, 255, 0.1);
-            opacity: 0;
-            transition: opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-        }
-
-        #convert-btn:hover {
-            background: #1d4ed8;
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2);
-        }
-
-        #convert-btn:hover::after {
-            opacity: 1;
-        }
-
-        #convert-btn:active {
-            transform: translateY(1px);
-            box-shadow: 0 2px 6px rgba(37, 99, 235, 0.15);
-        }
-
-        #convert-btn.processing {
-            background: #ef4444;
-            cursor: pointer;
-            transform: scale(0.98);
-            box-shadow: none;
-        }
-
-        /* 状态和进度显示 */
-        #status-text {
-            font-size: 13px;
-            color: #4b5563;
-            margin-bottom: 10px;
-            line-height: 1.5;
-        }
-
-        #progress-container {
-            background: #e5e7eb;
-            height: 4px;
-            border-radius: 2px;
-            overflow: hidden;
-            margin-bottom: 15px;
-            transform-origin: center;
-        }
-
-        #progress-bar {
-            background: #2563eb;
-            height: 100%;
-            width: 0%;
-            transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-            position: relative;
-            overflow: hidden;
-        }
-
-        #progress-bar::after {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: linear-gradient(
-                90deg,
-                transparent,
-                rgba(255, 255, 255, 0.3),
-                transparent
-            );
-            animation: progress-shine 1.5s linear infinite;
-        }
-
-        @keyframes progress-shine {
-            0% { transform: translateX(-100%); }
-            100% { transform: translateX(100%); }
-        }
-
-        /* 动画效果 */
-        @keyframes pulse {
-            0% { opacity: 1; transform: scale(1); }
-            50% { opacity: 0.7; transform: scale(0.98); }
-            100% { opacity: 1; transform: scale(1); }
-        }
-
-        .processing #status-text {
-            animation: pulse 2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
-        }
-    `);
-
-  // 缓存DOM元素
-  let panel,
-    statusText,
-    convertBtn,
-    progressBar,
-    progressContainer,
-    collapseBtn;
+  let panel, progressBar, progressText;
   let isProcessing = false;
   let shouldStop = false;
-  let formulaCount = 0;
-  let isCollapsed = true;
   let hoverTimer = null;
   const DEBUG_MODE = false;
+
+  // ---------- 速度配置 ----------
+  const SPEED_PRESETS = {
+    slow:   { label: "慢速",   delay: 111 },
+    normal: { label: "中速",   delay: 11 },
+    fast:   { label: "快速",   delay: 1  },
+    custom: { label: "自定义", delay: null },
+  };
+
+  const getDelay = () => {
+    const speed = GM_getValue("speed", "normal");
+    return speed === "custom" ? GM_getValue("customDelay", 30) : SPEED_PRESETS[speed].delay;
+  };
+
+  // ---------- 工具函数 ----------
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, getDelay()));
+
+  // ---------- 菜单状态 ----------
+  let totalConverted = GM_getValue("totalConverted", 0);
+  let totalMenuId = null;
+  let panelVisible = GM_getValue("panelVisible", true);
+
+  function refreshTotalMenu() {
+    if (totalMenuId !== null) GM_unregisterMenuCommand(totalMenuId);
+    totalMenuId = GM_registerMenuCommand(
+      `📊 累计转换: ${totalConverted} 个公式`,
+      () => {}
+    );
+  }
+
+  function updateProgress(current, total, textOverride = null) {
+    const percent = total > 0 ? (current / total) * 100 : 0;
+    progressBar.style.width = `${percent}%`;
+    progressText.textContent = textOverride || `${current}/${total}`;
+  }
+
   function createPanel() {
     panel = document.createElement("div");
     panel.id = "formula-helper";
-    panel.classList.add("collapsed");
     panel.innerHTML = `
-            <button id="collapse-btn">
-                <svg viewBox="0 0 24 24">
-                    <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
-                </svg>
-            </button>
-            <div class="content-wrapper">
-                <button id="convert-btn">🔄 (0)</button>
-                <div id="progress-container">
-                    <div id="progress-bar"></div>
-                </div>
-                <div id="status-text">就绪</div>
+        <span class="button-icon">M</span>
+        <div class="progress-wrapper">
+            <div class="progress-bar-container">
+                <div class="progress-bar-fill"></div>
             </div>
-        `;
+            <span class="progress-text">0</span>
+        </div>
+    `;
     document.body.appendChild(panel);
+    if (!panelVisible) panel.style.display = "none";
 
-    statusText = panel.querySelector("#status-text");
-    convertBtn = panel.querySelector("#convert-btn");
-    progressBar = panel.querySelector("#progress-bar");
-    progressContainer = panel.querySelector("#progress-container");
-    collapseBtn = panel.querySelector("#collapse-btn");
+    progressBar = panel.querySelector(".progress-bar-fill");
+    progressText = panel.querySelector(".progress-text");
 
-    // 添加收起按钮事件
-    collapseBtn.addEventListener("click", toggleCollapse);
+    // ---------- 拖拽 & 位置记忆 ----------
+    let dragState = null;
+    let dragTimer = null;
 
-    // 添加鼠标悬停事件
+    const savedRight = GM_getValue("panelRight", null);
+    const savedBottom = GM_getValue("panelBottom", null);
+    if (savedRight !== null && savedBottom !== null) {
+      panel.style.right = savedRight + "px";
+      panel.style.bottom = savedBottom + "px";
+    }
+
+    function startDrag(clientX, clientY) {
+      if (isProcessing || dragTimer) return;
+      const rect = panel.getBoundingClientRect();
+      dragState = {
+        offsetR: rect.right - clientX,
+        offsetB: rect.bottom - clientY,
+      };
+      dragTimer = setTimeout(() => {
+        dragState.activated = true;
+        panel.style.cursor = "grabbing";
+        panel.style.transition = "none";
+      }, 500);
+    }
+
+    function moveDrag(clientX, clientY) {
+      if (!dragState?.activated) return;
+      let r = window.innerWidth - clientX - dragState.offsetR;
+      let b = window.innerHeight - clientY - dragState.offsetB;
+      r = Math.max(0, Math.min(window.innerWidth - panel.offsetWidth, r));
+      b = Math.max(0, Math.min(window.innerHeight - panel.offsetHeight, b));
+      panel.style.right = r + "px";
+      panel.style.bottom = b + "px";
+    }
+
+    function endDrag() {
+      clearTimeout(dragTimer);
+      dragTimer = null;
+      if (!dragState) return;
+      if (dragState.activated) {
+        const rect = panel.getBoundingClientRect();
+        const r = Math.max(0, Math.min(window.innerWidth - rect.width, window.innerWidth - rect.right));
+        const b = Math.max(0, Math.min(window.innerHeight - rect.height, window.innerHeight - rect.bottom));
+        panel.style.right = r + "px";
+        panel.style.bottom = b + "px";
+        GM_setValue("panelRight", r);
+        GM_setValue("panelBottom", b);
+        panel.style.cursor = "pointer";
+        panel.style.transition = "";
+        const blockClick = (e) => {
+          e.stopImmediatePropagation();
+          document.removeEventListener("click", blockClick, true);
+        };
+        document.addEventListener("click", blockClick, true);
+        dragState = null;
+      } else {
+        dragState = null;
+      }
+    }
+
+    panel.addEventListener("mousedown", (e) => {
+      startDrag(e.clientX, e.clientY);
+      e.preventDefault();
+    });
+
+    document.addEventListener("mousemove", (e) => {
+      moveDrag(e.clientX, e.clientY);
+    });
+
+    document.addEventListener("mouseup", () => {
+      endDrag();
+    });
+
+    panel.addEventListener("touchstart", (e) => {
+      const t = e.touches[0];
+      startDrag(t.clientX, t.clientY);
+    }, { passive: true });
+
+    document.addEventListener("touchmove", (e) => {
+      const t = e.touches[0];
+      moveDrag(t.clientX, t.clientY);
+    }, { passive: true });
+
+    document.addEventListener("touchend", () => {
+      endDrag();
+    }, { passive: true });
+
+    // 自动检测待处理个数
+    let lastCount = -1;
+    const updateCount = () => {
+      if (isProcessing) return;
+      let count = 0;
+      for (const editor of getEditableEditors()) {
+        count += findFormulas(editor.textContent).length;
+      }
+      if (count !== lastCount) {
+        lastCount = count;
+        progressText.textContent = count ? `${count}` : "0";
+      }
+    };
+
+    // 初始检测
+    updateCount();
+
+    // Hover 逻辑
     panel.addEventListener("mouseenter", () => {
       clearTimeout(hoverTimer);
-      if (isCollapsed) {
-        hoverTimer = setTimeout(() => {
-          panel.classList.remove("collapsed");
-          isCollapsed = false;
-        }, 150); // 减少展开延迟时间
-      }
+      updateCount();
+      hoverTimer = setTimeout(() => {
+        if (!panel.classList.contains("hover")) {
+          panel.classList.add("hover");
+        }
+      }, 150);
     });
 
     panel.addEventListener("mouseleave", () => {
       clearTimeout(hoverTimer);
-      if (!isCollapsed && !isProcessing) {
-        // 添加处理中状态判断
-        hoverTimer = setTimeout(() => {
-          panel.classList.add("collapsed");
-          isCollapsed = true;
-        }, 800); // 适当减少收起延迟
+      if (isProcessing) return;
+      hoverTimer = setTimeout(() => {
+        panel.classList.remove("hover");
+      }, 800);
+    });
+
+    // 点击处理（拖拽时不触发）
+    panel.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (isProcessing) {
+        shouldStop = true;
+        progressText.textContent = "Stopping…";
+      } else {
+        convertFormulas();
       }
     });
   }
-
-  function toggleCollapse() {
-    isCollapsed = !isCollapsed;
-    panel.classList.toggle("collapsed");
-  }
-
-  function updateProgress(current, total) {
-    const percentage = total > 0 ? (current / total) * 100 : 0;
-    progressBar.style.width = `${percentage}%`;
-  }
-
-  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
   async function waitForCondition(
     checkFn,
@@ -332,10 +310,6 @@
   }
 
   function updateStatus(text, timeout = 0) {
-    statusText.textContent = text;
-    if (timeout) {
-      setTimeout(() => (statusText.textContent = "就绪"), timeout);
-    }
     console.log("[状态]", text);
   }
 
@@ -349,11 +323,11 @@
     const className =
       typeof element.className === "string"
         ? element.className
-            .trim()
-            .split(/\s+/)
-            .filter(Boolean)
-            .slice(0, 4)
-            .join(".")
+          .trim()
+          .split(/\s+/)
+          .filter(Boolean)
+          .slice(0, 4)
+          .join(".")
         : "";
     const classes = className ? `.${className}` : "";
     const role = element.getAttribute?.("role");
@@ -398,157 +372,30 @@
     };
   }
 
-  function findClosingSingleDollar(text, startIndex) {
-    for (let i = startIndex; i < text.length; i++) {
-      if (text[i] === "\n") {
-        return -1;
-      }
-      if (text[i] !== "$" || isEscaped(text, i) || text[i + 1] === "$") {
-        continue;
-      }
-      return i;
-    }
-    return -1;
-  }
-
-  function findClosingDoubleDollar(text, startIndex) {
-    for (let i = startIndex; i < text.length - 1; i++) {
-      if (text[i] === "$" && text[i + 1] === "$" && !isEscaped(text, i)) {
-        return i;
-      }
-    }
-    return -1;
-  }
-
-  function findClosingLatex(text, startIndex, closeChar) {
-    for (let i = startIndex; i < text.length - 1; i++) {
-      if (
-        text[i] === "\\" &&
-        text[i + 1] === closeChar &&
-        !isEscaped(text, i)
-      ) {
-        return i;
-      }
-    }
-    return -1;
-  }
-
-  function isValidInlineDollar(text, start, end) {
-    const content = text.slice(start + 1, end);
-    if (!content.trim() || /\n/.test(content)) {
-      return false;
-    }
-
-    const firstChar = text[start + 1];
-    const lastChar = text[end - 1];
-    if (
-      !firstChar ||
-      !lastChar ||
-      /\s/.test(firstChar) ||
-      /\s/.test(lastChar)
-    ) {
-      return false;
-    }
-
-    return true;
-  }
-
-  function buildFormulaToken(
-    text,
-    start,
-    end,
-    openLength,
-    closeLength,
-    type,
-    syntax,
-  ) {
-    const boundaries = findLineBoundaries(text, start, end);
-    return {
-      raw: text.slice(start, end),
-      start,
-      end,
-      type,
-      syntax,
-      content: text.slice(start + openLength, end - closeLength),
-      lineStart: boundaries.lineStart,
-      lineEnd: boundaries.lineEnd,
-      standaloneBlock: type === "block" ? boundaries.standaloneBlock : false,
-    };
-  }
-
   // 公式查找
   function findFormulas(text) {
     const formulas = [];
+    const re = /(?:(\$\$)([\s\S]*?)\1)|(?:\\\[([\s\S]*?)\\\])|(?:\\\(([\s\S]*?)\\\))|(?<!\$)(\$)([^\$\n]+?)\5(?!\$)/g;
 
-    for (let i = 0; i < text.length; i++) {
-      if (text[i] === "$" && !isEscaped(text, i)) {
-        if (text[i + 1] === "$") {
-          const closeIndex = findClosingDoubleDollar(text, i + 2);
-          if (closeIndex !== -1) {
-            const end = closeIndex + 2;
-            const token = buildFormulaToken(text, i, end, 2, 2, "block", "$$");
-            if (token.content.trim()) {
-              formulas.push(token);
-            }
-            i = end - 1;
-            continue;
-          }
-        } else {
-          const closeIndex = findClosingSingleDollar(text, i + 1);
-          if (closeIndex !== -1 && isValidInlineDollar(text, i, closeIndex)) {
-            const end = closeIndex + 1;
-            formulas.push(buildFormulaToken(text, i, end, 1, 1, "inline", "$"));
-            i = end - 1;
-            continue;
-          }
-        }
-      }
+    let m;
+    while ((m = re.exec(text)) !== null) {
+      let content, type, syntax;
+      if (m[1]) { content = m[2]; type = "block"; syntax = "$$"; }
+      else if (m[3]) { content = m[3]; type = "block"; syntax = "\\[\\]"; }
+      else if (m[4]) { content = m[4]; type = "inline"; syntax = "\\(\\)"; }
+      else if (m[5]) { content = m[6]; type = "inline"; syntax = "$"; }
+      if (!content || !content.trim()) continue;
 
-      if (text[i] === "\\" && !isEscaped(text, i)) {
-        if (text[i + 1] === "(") {
-          const closeIndex = findClosingLatex(text, i + 2, ")");
-          if (closeIndex !== -1) {
-            const end = closeIndex + 2;
-            const token = buildFormulaToken(
-              text,
-              i,
-              end,
-              2,
-              2,
-              "inline",
-              "\\(\\)",
-            );
-            if (token.content.trim()) {
-              formulas.push(token);
-            }
-            i = end - 1;
-            continue;
-          }
-        }
-
-        if (text[i + 1] === "[") {
-          const closeIndex = findClosingLatex(text, i + 2, "]");
-          if (closeIndex !== -1) {
-            const end = closeIndex + 2;
-            const token = buildFormulaToken(
-              text,
-              i,
-              end,
-              2,
-              2,
-              "block",
-              "\\[\\]",
-            );
-            if (token.content.trim()) {
-              formulas.push(token);
-            }
-            i = end - 1;
-            continue;
-          }
-        }
-      }
+      const start = m.index;
+      const end = m.index + m[0].length;
+      const b = findLineBoundaries(text, start, end);
+      formulas.push({
+        raw: m[0], start, end, type, syntax,
+        content: content.trim(),
+        lineStart: b.lineStart, lineEnd: b.lineEnd,
+        standaloneBlock: type === "block" ? b.standaloneBlock : false,
+      });
     }
-
     return formulas;
   }
 
@@ -1090,122 +937,57 @@
     }
   }
 
-  // 优化的主转换函数
+  // ---------- 核心转换 ----------
   async function convertFormulas() {
     if (isProcessing) return;
-    isProcessing = true;
-    shouldStop = false;
-    convertBtn.classList.add("processing");
-    convertBtn.textContent = "取消";
-
+    isProcessing = true; shouldStop = false;
+    panel.classList.add("processing");
     try {
-      formulaCount = 0;
-      updateStatus("开始扫描文档... (按ESC取消)");
-
+      // 扫描并获取总数
       const initialTasks = collectFormulaTasks();
-      const totalFormulas = initialTasks.reduce(
-        (sum, item) => sum + item.formulas.length,
-        0,
-      );
-
+      let totalFormulas = initialTasks.reduce((sum, item) => sum + item.formulas.length, 0);
       if (totalFormulas === 0) {
-        updateStatus("未找到需要转换的公式", 3000);
-        updateProgress(0, 0);
-        convertBtn.classList.remove("processing");
-        isProcessing = false;
+        progressText.textContent = "0";
+        progressBar.style.width = "0%";
         return;
       }
 
-      updateStatus(`找到 ${totalFormulas} 个公式，开始转换...`);
+      let formulaCount = 0;
+      updateProgress(0, totalFormulas, "scanning");
 
       const phases = [
-        {
-          name: "行内公式",
-          getTasks: () =>
-            initialTasks
-              .map(({ editor, formulas }) => ({
-                editor,
-                formulas: formulas.filter(
-                  (formula) => formula.type === "inline",
-                ),
-              }))
-              .filter((item) => item.formulas.length),
-        },
-        {
-          name: "块公式",
-          getTasks: () =>
-            collectFormulaTasks((formula) => formula.type === "block"),
-        },
+        { name: "Inline", getTasks: () => initialTasks.map(({ editor, formulas }) => ({ editor, formulas: formulas.filter(f => f.type === "inline") })).filter(item => item.formulas.length) },
+        { name: "Block", getTasks: () => collectFormulaTasks(f => f.type === "block") }
       ];
 
       for (const phase of phases) {
         if (shouldStop) break;
         const phaseTasks = phase.getTasks();
-        if (!phaseTasks.length) {
-          continue;
-        }
-
-        updateStatus(
-          `开始转换${phase.name}... (${formulaCount}/${totalFormulas})`,
-        );
-
-        // 每个阶段独立处理，避免块级转换破坏后续行内公式定位
         for (const { editor, formulas } of phaseTasks.slice().reverse()) {
           if (shouldStop) break;
           for (const formulaObj of formulas.slice().reverse()) {
             if (shouldStop) break;
             const result = await convertFormula(editor, formulaObj);
-            if (!result) {
-              continue;
-            }
-            const renderMode = result;
-            formulaCount++;
-            updateProgress(formulaCount, totalFormulas);
-            if (
-              formulaCount === 1 ||
-              formulaCount === totalFormulas ||
-              formulaCount % 5 === 0 ||
-              renderMode === "block"
-            ) {
-              updateStatus(
-                `正在转换... (${formulaCount}/${totalFormulas}) [${formulaObj.syntax} -> ${renderMode}]`,
-              );
-            }
-            if (renderMode === "block") {
-              await sleep(24);
+            if (result) {
+              formulaCount++;
+              totalConverted++;
+              GM_setValue("totalConverted", totalConverted);
+              updateProgress(formulaCount, totalFormulas, `${formulaCount}/${totalFormulas}`);
             }
           }
         }
       }
 
-      if (shouldStop) {
-        updateStatus(`已取消。已完成: ${formulaCount}`, 3000);
-      } else {
-        updateStatus(`Done:${formulaCount}`, 3000);
-      }
-
-      convertBtn.textContent = `🔄 (${formulaCount})`;
-
-      // 转换完成后自动收起面板
-      setTimeout(() => {
-        if (!panel.classList.contains("collapsed")) {
-          panel.classList.add("collapsed");
-          isCollapsed = true;
-        }
-      }, 1000);
-    } catch (error) {
-      console.error("转换过程出错:", error);
-      updateStatus(`发生错误: ${error.message}`, 5000);
-      updateProgress(0, 0);
+      updateProgress(totalFormulas, totalFormulas, shouldStop ? "Stopped" : "Done");
+      refreshTotalMenu();
     } finally {
       isProcessing = false;
-      convertBtn.classList.remove("processing");
-
-      setTimeout(() => {
-        if (!isProcessing) {
-          updateProgress(0, 0);
-        }
-      }, 1000);
+      panel.classList.remove("processing");
+      if (!shouldStop) {
+        setTimeout(() => {
+          panel.classList.remove("hover");
+        }, 1200);
+      }
     }
   }
 
@@ -1315,30 +1097,98 @@
 
   // 初始化
   createPanel();
-  convertBtn.addEventListener("click", () => {
-    if (isProcessing) {
-      shouldStop = true;
-      updateStatus("正在取消...");
-    } else {
-      convertFormulas();
+
+  // ---------- 注册菜单 ----------
+  const speedOrder = ["slow", "normal", "fast", "custom"];
+  const menuIds = { toggle: null, speed: null };
+
+  function refreshToggleMenu() {
+    if (menuIds.toggle !== null) GM_unregisterMenuCommand(menuIds.toggle);
+    menuIds.toggle = GM_registerMenuCommand(`👀 悬浮按钮: ${panelVisible ? "隐藏" : "显示"}`, () => {
+      panelVisible = !panelVisible;
+      GM_setValue("panelVisible", panelVisible);
+      const helper = document.getElementById("formula-helper");
+      if (helper) helper.style.display = panelVisible ? "" : "none";
+      refreshToggleMenu();
+    });
+  }
+
+  function refreshSpeedMenu() {
+    if (menuIds.speed !== null) GM_unregisterMenuCommand(menuIds.speed);
+    const speed = GM_getValue("speed", "normal");
+    const label = speed === "custom"
+      ? `自定义(${GM_getValue("customDelay", 30)}ms)`
+      : SPEED_PRESETS[speed].label;
+    menuIds.speed = GM_registerMenuCommand(`⚡ 转换速度: ${label}`, () => {
+      const cur = GM_getValue("speed", "normal");
+      const idx = speedOrder.indexOf(cur);
+      const next = speedOrder[(idx + 1) % speedOrder.length];
+      if (next === "custom") {
+        const input = prompt("请输入自定义延迟(毫秒):", GM_getValue("customDelay", 30));
+        const val = parseInt(input, 10);
+        if (!isNaN(val) && val >= 0) GM_setValue("customDelay", val);
+        else return;
+      }
+      GM_setValue("speed", next);
+      refreshSpeedMenu();
+    });
+  }
+
+  GM_registerMenuCommand("🔄 执行公式转换", () => { if (!isProcessing) convertFormulas(); });
+
+  refreshToggleMenu();
+  refreshSpeedMenu();
+
+  GM_registerMenuCommand("🔗 反馈问题", () => window.open("https://github.com/skyance/Notion-Formula-Auto-Conversion-Tool/issues"));
+
+  refreshTotalMenu();
+
+  // ===== 检测 Notion 侧边栏/设置面板/对话框/其他页面，自动隐藏按钮 =====
+  function shouldHide() {
+    return (
+      !document.querySelector('.notion-topbar-share-menu') ||
+      document.querySelector('.chat_sidebar') ||
+      document.querySelector('.notion-space-settings') ||
+      document.querySelector('.notion-dialog')
+    );
+  }
+
+  const sidebarObserver = new MutationObserver(() => {
+    const helper = document.getElementById('formula-helper');
+    if (!helper) return;
+
+    if (!panelVisible) {
+      if (helper.style.display !== 'none') {
+        helper.style.display = 'none';
+      }
+      return;
     }
+
+    if (shouldHide()) {
+      if (helper.style.display !== 'none') {
+        helper.style.display = 'none';
+      }
+    } else {
+      if (helper.style.display !== '') {
+        helper.style.display = '';
+      }
+    }
+  });
+
+  sidebarObserver.observe(document.body, {
+    childList: true,
+    subtree: true,
+    attributes: true,
+    attributeFilter: ['class']
   });
 
   // 监听ESC键取消
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape" && isProcessing) {
       shouldStop = true;
-      updateStatus("正在取消...");
+      progressText.textContent = "Stopping…";
     }
   });
 
-  // 页面加载完成后检查公式数量
-  setTimeout(() => {
-    const formulas = findFormulas(document.body.textContent);
-    if (formulas.length > 0) {
-      convertBtn.textContent = `🔄(${formulas.length})`;
-    }
-  }, 1000);
-
-  console.log("公式转换工具已加载");
+  console.log("Formula hover-to-convert tool loaded");
 })();
