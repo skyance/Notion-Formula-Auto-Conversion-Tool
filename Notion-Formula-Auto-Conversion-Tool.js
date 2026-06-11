@@ -1,10 +1,12 @@
 // ==UserScript==
 // @name         Notion-Formula-Auto-Conversion-Tool
 // @namespace    http://tampermonkey.net/
-// @version      3.4.1
+// @version      3.5
 // @description  Notion 自动公式转换工具
-// @author       skyance、0xstrid、fengjy73、Sparidae、ckrvxr
+// @author       skyance、0xstride、fengjy73、Sparidae、ckrvxr
 // @match        https://www.notion.so/*
+// @match        https://notion.com/*
+// @match        https://*.notion.com/*
 // @grant        GM_addStyle
 // @grant        GM_registerMenuCommand
 // @grant        GM_unregisterMenuCommand
@@ -106,21 +108,20 @@
   let hoverTimer = null;
   const DEBUG_MODE = false;
 
-  // ---------- 速度配置 ----------
-  const SPEED_PRESETS = {
-    slow:   { label: "慢速",   delay: 111 },
-    normal: { label: "中速",   delay: 11 },
-    fast:   { label: "快速",   delay: 1  },
-    custom: { label: "自定义", delay: null },
-  };
+  // ---------- 固定快速模式 ----------
+  const FAST_DELAY_SCALE = 0.12;
+  const FAST_MIN_DELAY = 1;
 
-  const getDelay = () => {
-    const speed = GM_getValue("speed", "normal");
-    return speed === "custom" ? GM_getValue("customDelay", 30) : SPEED_PRESETS[speed].delay;
+  const getDelay = (ms = 0) => {
+    const requested = Math.max(0, Number(ms) || 0);
+    if (requested === 0) {
+      return FAST_MIN_DELAY;
+    }
+    return Math.max(FAST_MIN_DELAY, Math.ceil(requested * FAST_DELAY_SCALE));
   };
 
   // ---------- 工具函数 ----------
-  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, getDelay()));
+  const sleep = (ms = 0) => new Promise((resolve) => setTimeout(resolve, getDelay(ms)));
 
   // ---------- 菜单状态 ----------
   let totalConverted = GM_getValue("totalConverted", 0);
@@ -372,98 +373,209 @@
     };
   }
 
+  function findNextFormulaStart(text, fromIndex) {
+    let dollarIndex = text.indexOf("$", fromIndex);
+    let slashIndex = text.indexOf("\\", fromIndex);
+
+    while (dollarIndex !== -1 && isEscaped(text, dollarIndex)) {
+      dollarIndex = text.indexOf("$", dollarIndex + 1);
+    }
+
+    while (slashIndex !== -1 && isEscaped(text, slashIndex)) {
+      slashIndex = text.indexOf("\\", slashIndex + 1);
+    }
+
+    if (dollarIndex === -1) return slashIndex;
+    if (slashIndex === -1) return dollarIndex;
+    return Math.min(dollarIndex, slashIndex);
+  }
+
+  function findUnescapedToken(text, token, fromIndex, stopAtNewline = false) {
+    const newlineIndex = stopAtNewline ? text.indexOf("\n", fromIndex) : -1;
+    let index = text.indexOf(token, fromIndex);
+
+    while (index !== -1) {
+      if (newlineIndex !== -1 && newlineIndex < index) {
+        return -1;
+      }
+      if (!isEscaped(text, index)) {
+        return index;
+      }
+      index = text.indexOf(token, index + 1);
+    }
+
+    return -1;
+  }
+
+  function findClosingSingleDollar(text, startIndex) {
+    let index = findUnescapedToken(text, "$", startIndex, true);
+    while (index !== -1) {
+      if (text[index - 1] !== "$" && text[index + 1] !== "$") {
+        return index;
+      }
+      index = findUnescapedToken(text, "$", index + 1, true);
+    }
+    return -1;
+  }
+
+  function findClosingDoubleDollar(text, startIndex) {
+    return findUnescapedToken(text, "$$", startIndex);
+  }
+
+  function findClosingLatex(text, startIndex, closeChar) {
+    return findUnescapedToken(text, `\\${closeChar}`, startIndex);
+  }
+
+  function isValidInlineDollar(text, start, end) {
+    const content = text.slice(start + 1, end);
+    if (!content.trim() || /\n/.test(content)) {
+      return false;
+    }
+
+    const firstChar = text[start + 1];
+    const lastChar = text[end - 1];
+    return !!(
+      firstChar &&
+      lastChar &&
+      !/\s/.test(firstChar) &&
+      !/\s/.test(lastChar)
+    );
+  }
+
+  function buildFormulaToken(text, start, end, openLength, closeLength, type, syntax) {
+    const boundaries = findLineBoundaries(text, start, end);
+    return {
+      raw: text.slice(start, end),
+      start,
+      end,
+      type,
+      syntax,
+      content: text.slice(start + openLength, end - closeLength),
+      lineStart: boundaries.lineStart,
+      lineEnd: boundaries.lineEnd,
+      standaloneBlock: type === "block" ? boundaries.standaloneBlock : false,
+    };
+  }
+
   // 公式查找
   function findFormulas(text) {
     const formulas = [];
-    const re = /(?:(\$\$)([\s\S]*?)\1)|(?:\\\[([\s\S]*?)\\\])|(?:\\\(([\s\S]*?)\\\))|(?<!\$)(\$)([^\$\n]+?)\5(?!\$)/g;
+    if (!text || !/[\\$]/.test(text)) {
+      return formulas;
+    }
 
-    let m;
-    while ((m = re.exec(text)) !== null) {
-      let content, type, syntax;
-      if (m[1]) { content = m[2]; type = "block"; syntax = "$$"; }
-      else if (m[3]) { content = m[3]; type = "block"; syntax = "\\[\\]"; }
-      else if (m[4]) { content = m[4]; type = "inline"; syntax = "\\(\\)"; }
-      else if (m[5]) { content = m[6]; type = "inline"; syntax = "$"; }
-      if (!content || !content.trim()) continue;
+    let i = 0;
+    while (i < text.length) {
+      i = findNextFormulaStart(text, i);
+      if (i === -1) break;
 
-      const start = m.index;
-      const end = m.index + m[0].length;
-      const b = findLineBoundaries(text, start, end);
-      formulas.push({
-        raw: m[0], start, end, type, syntax,
-        content: content.trim(),
-        lineStart: b.lineStart, lineEnd: b.lineEnd,
-        standaloneBlock: type === "block" ? b.standaloneBlock : false,
-      });
+      if (text[i] === "$") {
+        if (text[i + 1] === "$") {
+          const closeIndex = findClosingDoubleDollar(text, i + 2);
+          if (closeIndex !== -1) {
+            const end = closeIndex + 2;
+            const token = buildFormulaToken(text, i, end, 2, 2, "block", "$$");
+            if (token.content.trim()) formulas.push(token);
+            i = end;
+            continue;
+          }
+        } else {
+          const closeIndex = findClosingSingleDollar(text, i + 1);
+          if (closeIndex !== -1 && isValidInlineDollar(text, i, closeIndex)) {
+            const end = closeIndex + 1;
+            formulas.push(buildFormulaToken(text, i, end, 1, 1, "inline", "$"));
+            i = end;
+            continue;
+          }
+        }
+      } else if (text[i] === "\\") {
+        if (text[i + 1] === "(") {
+          const closeIndex = findClosingLatex(text, i + 2, ")");
+          if (closeIndex !== -1) {
+            const end = closeIndex + 2;
+            const token = buildFormulaToken(text, i, end, 2, 2, "inline", "\\(\\)");
+            if (token.content.trim()) formulas.push(token);
+            i = end;
+            continue;
+          }
+        } else if (text[i + 1] === "[") {
+          const closeIndex = findClosingLatex(text, i + 2, "]");
+          if (closeIndex !== -1) {
+            const end = closeIndex + 2;
+            const token = buildFormulaToken(text, i, end, 2, 2, "block", "\\[\\]");
+            if (token.content.trim()) formulas.push(token);
+            i = end;
+            continue;
+          }
+        }
+      }
+
+      i++;
     }
     return formulas;
   }
 
-  function getTextSegments(editor) {
-    const segments = [];
+  function createRangeFromOffsets(editor, start, end) {
     const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
     let currentOffset = 0;
+    let firstPos = null;
+    let lastPos = null;
+    let startPos = null;
+    let endPos = null;
     let node;
 
     while ((node = walker.nextNode())) {
-      if (!node.textContent) {
+      const length = node.textContent.length;
+      if (!length) {
         continue;
       }
-      segments.push({
+
+      if (!firstPos) {
+        firstPos = { node, offset: 0 };
+      }
+
+      const nodeStart = currentOffset;
+      const nodeEnd = currentOffset + length;
+
+      if (!startPos) {
+        if (start <= 0) {
+          startPos = firstPos;
+        } else if (start >= nodeStart && start < nodeEnd) {
+          startPos = {
+            node,
+            offset: start - nodeStart,
+          };
+        }
+      }
+
+      if (!endPos) {
+        if (end <= 0) {
+          endPos = firstPos;
+        } else if (end > nodeStart && end <= nodeEnd) {
+          endPos = {
+            node,
+            offset: end - nodeStart,
+          };
+        }
+      }
+
+      currentOffset = nodeEnd;
+      lastPos = {
         node,
-        start: currentOffset,
-        end: currentOffset + node.textContent.length,
-      });
-      currentOffset += node.textContent.length;
-    }
+        offset: length,
+      };
 
-    return segments;
-  }
-
-  function resolveTextPosition(segments, offset, preferEnd = false) {
-    if (!segments.length) {
-      return null;
-    }
-
-    if (offset <= 0) {
-      return { node: segments[0].node, offset: 0 };
-    }
-
-    for (const segment of segments) {
-      const inSegment = preferEnd
-        ? offset > segment.start && offset <= segment.end
-        : offset >= segment.start && offset < segment.end;
-
-      if (inSegment) {
-        return {
-          node: segment.node,
-          offset: Math.min(
-            segment.node.textContent.length,
-            offset - segment.start,
-          ),
-        };
-      }
-
-      if (preferEnd && offset === segment.end) {
-        return { node: segment.node, offset: segment.node.textContent.length };
+      if (startPos && endPos) {
+        break;
       }
     }
 
-    const lastSegment = segments[segments.length - 1];
-    return {
-      node: lastSegment.node,
-      offset: lastSegment.node.textContent.length,
-    };
-  }
-
-  function createRangeFromOffsets(editor, start, end) {
-    const segments = getTextSegments(editor);
-    if (!segments.length) {
+    if (!firstPos) {
       return null;
     }
 
-    const startPos = resolveTextPosition(segments, start, false);
-    const endPos = resolveTextPosition(segments, end, true);
+    startPos = startPos || lastPos;
+    endPos = endPos || lastPos;
     if (!startPos || !endPos) {
       return null;
     }
@@ -557,42 +669,45 @@
   }
 
   function isVisibleElement(element) {
-    if (!element) {
+    if (!element || element.getClientRects().length === 0) {
       return false;
     }
     const style = window.getComputedStyle(element);
-    if (style.display === "none" || style.visibility === "hidden") {
-      return false;
+    return style.display !== "none" && style.visibility !== "hidden";
+  }
+
+  function findVisibleSafeElement(elements, editor) {
+    for (const element of elements) {
+      if (isVisibleElement(element) && isSafeInlineInputElement(element, editor)) {
+        return element;
+      }
     }
-    return element.getClientRects().length > 0;
+    return null;
   }
 
   function findInlineInputCandidate(editor) {
-    const localSelectors = 'input, textarea, [contenteditable="true"]';
-    const globalSelectors = [
-      ".notion-overlay-container input",
-      ".notion-overlay-container textarea",
-      '.notion-overlay-container [contenteditable="true"]',
-      '[role="dialog"] input',
-      '[role="dialog"] textarea',
-      '[role="dialog"] [contenteditable="true"]',
-      ".notion-modal input",
-      ".notion-modal textarea",
-      '.notion-modal [contenteditable="true"]',
-    ];
-
-    const candidates = [
-      ...Array.from(editor.querySelectorAll(localSelectors)),
-      ...Array.from(document.querySelectorAll(globalSelectors.join(","))),
-    ];
-    debugLog("inline input candidates", candidates.map(describeElement));
-    return (
-      candidates.find(
-        (candidate) =>
-          isVisibleElement(candidate) &&
-          isSafeInlineInputElement(candidate, editor),
-      ) || null
+    const inputSelectors = 'input, textarea, [contenteditable="true"]';
+    const localCandidate = findVisibleSafeElement(
+      editor.querySelectorAll(inputSelectors),
+      editor,
     );
+    if (localCandidate) {
+      return localCandidate;
+    }
+
+    const overlayRoots = Array.from(
+      document.querySelectorAll('.notion-overlay-container, [role="dialog"], .notion-modal'),
+    ).reverse();
+
+    for (const root of overlayRoots) {
+      const candidate = findVisibleSafeElement(root.querySelectorAll(inputSelectors), editor);
+      if (candidate) {
+        debugLog("inline input candidate", describeElement(candidate));
+        return candidate;
+      }
+    }
+
+    return null;
   }
 
   async function waitForInlineInput(editor, attempts = 8, interval = 12) {
@@ -765,7 +880,7 @@
     });
 
     eventTarget.dispatchEvent(keydownEvent);
-    await sleep(10);
+    await sleep(4);
     eventTarget.dispatchEvent(keyupEvent);
   }
 
@@ -953,7 +1068,20 @@
       }
 
       let formulaCount = 0;
+      let lastProgressUpdate = 0;
       updateProgress(0, totalFormulas, "scanning");
+
+      const updateProgressIfNeeded = (force = false) => {
+        const now = Date.now();
+        if (
+          force ||
+          formulaCount === totalFormulas ||
+          now - lastProgressUpdate >= 80
+        ) {
+          updateProgress(formulaCount, totalFormulas, `${formulaCount}/${totalFormulas}`);
+          lastProgressUpdate = now;
+        }
+      };
 
       const phases = [
         { name: "Inline", getTasks: () => initialTasks.map(({ editor, formulas }) => ({ editor, formulas: formulas.filter(f => f.type === "inline") })).filter(item => item.formulas.length) },
@@ -970,15 +1098,19 @@
             const result = await convertFormula(editor, formulaObj);
             if (result) {
               formulaCount++;
-              totalConverted++;
-              GM_setValue("totalConverted", totalConverted);
-              updateProgress(formulaCount, totalFormulas, `${formulaCount}/${totalFormulas}`);
+              updateProgressIfNeeded();
             }
           }
         }
       }
 
-      updateProgress(totalFormulas, totalFormulas, shouldStop ? "Stopped" : "Done");
+      if (formulaCount > 0) {
+        totalConverted += formulaCount;
+        GM_setValue("totalConverted", totalConverted);
+      }
+
+      updateProgressIfNeeded(true);
+      updateProgress(formulaCount, totalFormulas, shouldStop ? "Stopped" : "Done");
       refreshTotalMenu();
     } finally {
       isProcessing = false;
@@ -1027,8 +1159,8 @@
 
     for (const event of events) {
       element.dispatchEvent(event);
-      await sleep(8);
     }
+    await sleep(8);
   }
 
   // 键盘快捷键模拟
@@ -1071,7 +1203,7 @@
       eventTarget.dispatchEvent(new KeyboardEvent("keyup", event));
     }
 
-    await sleep(10);
+    await sleep(6);
   }
 
   // 获取键盘按键信息
@@ -1099,8 +1231,7 @@
   createPanel();
 
   // ---------- 注册菜单 ----------
-  const speedOrder = ["slow", "normal", "fast", "custom"];
-  const menuIds = { toggle: null, speed: null };
+  const menuIds = { toggle: null };
 
   function refreshToggleMenu() {
     if (menuIds.toggle !== null) GM_unregisterMenuCommand(menuIds.toggle);
@@ -1113,31 +1244,9 @@
     });
   }
 
-  function refreshSpeedMenu() {
-    if (menuIds.speed !== null) GM_unregisterMenuCommand(menuIds.speed);
-    const speed = GM_getValue("speed", "normal");
-    const label = speed === "custom"
-      ? `自定义(${GM_getValue("customDelay", 30)}ms)`
-      : SPEED_PRESETS[speed].label;
-    menuIds.speed = GM_registerMenuCommand(`⚡ 转换速度: ${label}`, () => {
-      const cur = GM_getValue("speed", "normal");
-      const idx = speedOrder.indexOf(cur);
-      const next = speedOrder[(idx + 1) % speedOrder.length];
-      if (next === "custom") {
-        const input = prompt("请输入自定义延迟(毫秒):", GM_getValue("customDelay", 30));
-        const val = parseInt(input, 10);
-        if (!isNaN(val) && val >= 0) GM_setValue("customDelay", val);
-        else return;
-      }
-      GM_setValue("speed", next);
-      refreshSpeedMenu();
-    });
-  }
-
   GM_registerMenuCommand("🔄 执行公式转换", () => { if (!isProcessing) convertFormulas(); });
 
   refreshToggleMenu();
-  refreshSpeedMenu();
 
   GM_registerMenuCommand("🔗 反馈问题", () => window.open("https://github.com/skyance/Notion-Formula-Auto-Conversion-Tool/issues"));
 
